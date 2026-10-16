@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2f5d50">
+  <meta name="description" content="Arbre généalogique familial — fonctionne sur smartphone, hors ligne.">
+  <title>Arbre familial</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="title">Arbre familial</h1>
+    <button id="menuBtn" class="icon-btn" aria-label="Menu">⋮</button>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-view="list">Personnes</button>
+    <button class="tab" data-view="tree">Arbre</button>
+  </nav>
+
+  <main>
+    <!-- Liste des personnes -->
+    <section id="view-list" class="view active">
+      <input id="search" type="search" placeholder="Rechercher un nom, un prénom…" autocomplete="off">
+      <p id="count" class="muted"></p>
+      <ul id="personList" class="person-list"></ul>
+      <p id="emptyMsg" class="empty" hidden>
+        Aucune personne pour l’instant.<br>Appuyez sur <strong>+</strong> pour ajouter la première.
+      </p>
+    </section>
+
+    <!-- Fiche d'une personne -->
+    <section id="view-person" class="view"></section>
+
+    <!-- Arbre -->
+    <section id="view-tree" class="view">
+      <div class="tree-controls">
+        <label>Personne centrale
+          <select id="treeRoot"></select>
+        </label>
+        <div class="seg">
+          <button class="seg-btn active" data-mode="desc">Descendants</button>
+          <button class="seg-btn" data-mode="anc">Ancêtres</button>
+        </div>
+      </div>
+      <div id="tree" class="tree-wrap"></div>
+    </section>
+  </main>
+
+  <button id="addBtn" class="fab" aria-label="Ajouter une personne">+</button>
+
+  <!-- Formulaire ajout / modification -->
+  <dialog id="personDialog">
+    <form id="personForm" method="dialog">
+      <h2 id="formTitle">Nouvelle personne</h2>
+      <input type="hidden" name="personId">
+      <label>Prénom(s) *<input name="firstName" required autocomplete="off"></label>
+      <label>Nom *<input name="lastName" required autocomplete="off"></label>
+      <label>Sexe
+        <select name="sex">
+          <option value="U">Non précisé</option>
+          <option value="M">Homme</option>
+          <option value="F">Femme</option>
+        </select>
+      </label>
+      <label>Date de naissance
+        <input name="birthDate" placeholder="JJ/MM/AAAA, MM/AAAA ou AAAA" inputmode="numeric" autocomplete="off">
+      </label>
+      <label>Lieu de naissance<input name="birthPlace" autocomplete="off"></label>
+      <label>Date de décès
+        <input name="deathDate" placeholder="vide si vivant" inputmode="numeric" autocomplete="off">
+      </label>
+
+      <fieldset>
+        <legend>Parenté</legend>
+        <label>Père<select name="fatherId"></select></label>
+        <label>Mère<select name="motherId"></select></label>
+        <label>Conjoint(s)
+          <select name="spouseIds" multiple size="4"></select>
+          <small class="muted">Maintenir/appuyer pour en choisir plusieurs.</small>
+        </label>
+      </fieldset>
+
+      <label>Notes<textarea name="notes" rows="3"></textarea></label>
+      <p id="formError" class="error" hidden></p>
+
+      <div class="form-actions">
+        <button type="button" id="cancelBtn" class="btn">Annuler</button>
+        <button type="submit" class="btn primary">Enregistrer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Menu -->
+  <dialog id="menuDialog">
+    <h2>Données</h2>
+    <p class="muted small">Les données restent sur ce téléphone. Pour les partager, exportez un fichier et envoyez-le à la famille, qui l’importera.</p>
+    <div class="menu-list">
+      <button class="btn" id="exportJsonBtn">📤 Exporter / partager (JSON)</button>
+      <button class="btn" id="exportGedBtn">📄 Exporter au format GEDCOM</button>
+      <label class="btn file-btn">📥 Importer un fichier JSON
+        <input type="file" id="importInput" accept=".json,application/json" hidden>
+      </label>
+      <button class="btn" id="demoBtn">🧪 Charger un exemple</button>
+      <button class="btn danger" id="clearBtn">🗑️ Tout effacer</button>
+      <button class="btn" id="closeMenuBtn">Fermer</button>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
