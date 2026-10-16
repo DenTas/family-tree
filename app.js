@@ -14,10 +14,18 @@
 
 const STORAGE_KEY = 'arbre-familial:v1';
 const FORMAT_VERSION = 1;
+const CONFIG = window.APP_CONFIG || {};
+const SHARED = Boolean(CONFIG.firebase);
 
 /* ----------------------------- Stockage -------------------------------- */
+// Mode local : localStorage. Mode partagé : Firestore (voir cloud.js), qui garde aussi
+// une copie locale pour fonctionner hors connexion.
 
-let people = load();
+let people = SHARED ? [] : load();
+let cloud = null; // module cloud.js en mode partagé
+let account = null; // utilisateur connecté (mode partagé)
+let role = SHARED ? null : 'admin'; // en mode local, on a tous les droits
+const canEdit = () => role === 'editor' || role === 'admin';
 
 function load() {
   try {
@@ -30,6 +38,7 @@ function load() {
 }
 
 function save() {
+  if (SHARED) return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: FORMAT_VERSION, people }));
   } catch {
@@ -58,6 +67,39 @@ function newId() {
 }
 
 const byId = (id) => people.find((p) => p.id === id);
+
+/**
+ * Applique une modification puis l'enregistre. `apply` modifie le tableau `people` ;
+ * on compare avant/après pour savoir quelles fiches ont changé. En mode partagé,
+ * ces changements partent dans Firestore avec une entrée d'historique (`label`).
+ */
+function mutate(label, apply) {
+  const before = new Map(people.map((p) => [p.id, JSON.stringify(p)]));
+  apply();
+  const changes = [];
+  const ids = new Set([...before.keys(), ...people.map((p) => p.id)]);
+  for (const id of ids) {
+    const b = before.get(id) || null;
+    const a = byId(id) ? JSON.stringify(byId(id)) : null;
+    if (a !== b) changes.push({ id, before: b && JSON.parse(b), after: a && JSON.parse(a) });
+  }
+  if (!changes.length) return;
+  if (cloud) cloud.commit(changes, label).catch((e) => toast(e.message));
+  else save();
+}
+
+/** Remet les liens en cohérence : conjoints réciproques, plus de lien vers une fiche disparue. */
+function repairLinks() {
+  for (const p of people) {
+    if (p.fatherId && !byId(p.fatherId)) p.fatherId = '';
+    if (p.motherId && !byId(p.motherId)) p.motherId = '';
+    p.spouseIds = p.spouseIds.filter((sid) => sid !== p.id && byId(sid));
+    for (const sid of p.spouseIds) {
+      const s = byId(sid);
+      if (!s.spouseIds.includes(p.id)) s.spouseIds.push(p.id);
+    }
+  }
+}
 
 /* ------------------------------ Parenté -------------------------------- */
 
@@ -159,23 +201,35 @@ function toast(msg) {
 let treeMode = 'desc';
 let treeRootId = '';
 
-function route() {
+function route(keepScroll = false) {
+  document.body.classList.toggle('can-edit', canEdit());
+  document.body.classList.toggle('is-admin', role === 'admin');
+  document.body.classList.toggle('shared', SHARED);
+  // Mode partagé : tant qu'on n'est pas connecté avec un accès, on montre l'écran de connexion.
+  const locked = SHARED && !role;
+  document.body.classList.toggle('locked', locked);
+  if (locked) return showView('login', null, keepScroll);
+
   const [, view, id] = location.hash.split('/');
-  if (view === 'personne' && byId(id)) showView('person', id);
-  else if (view === 'arbre') showView('tree');
-  else showView('list');
+  if (view === 'personne' && byId(id)) showView('person', id, keepScroll);
+  else if (view === 'arbre') showView('tree', null, keepScroll);
+  else if (view === 'historique' && SHARED) showView('history', null, keepScroll);
+  else showView('list', null, keepScroll);
 }
 
-function showView(name, id) {
+function showView(name, id, keepScroll) {
   $$('.view').forEach((v) => v.classList.remove('active'));
   $(`#view-${name}`).classList.add('active');
   $$('.tab').forEach((t) =>
     t.classList.toggle('active', t.dataset.view === (name === 'tree' ? 'tree' : 'list'))
   );
+  if (name !== 'history') stopHistory();
+  if (name === 'login') renderLogin();
   if (name === 'list') renderList();
   if (name === 'person') renderPerson(id);
   if (name === 'tree') renderTree();
-  window.scrollTo(0, 0);
+  if (name === 'history') startHistory();
+  if (!keepScroll) window.scrollTo(0, 0);
 }
 
 const go = (hash) => (location.hash = hash);
@@ -232,10 +286,10 @@ function renderPerson(id) {
     <div class="card"><h3>Enfants</h3>${chips(childrenOf(p.id))}</div>
     <div class="card"><h3>Frères et sœurs</h3>${chips(siblingsOf(p))}</div>
     <div class="actions">
-      <button class="btn primary" data-edit="${esc(p.id)}">Modifier</button>
-      <button class="btn" data-add-child="${esc(p.id)}">+ Ajouter un enfant</button>
+      <button class="btn primary edit-only" data-edit="${esc(p.id)}">Modifier</button>
+      <button class="btn edit-only" data-add-child="${esc(p.id)}">+ Ajouter un enfant</button>
       <button class="btn" data-show-tree="${esc(p.id)}">Voir dans l’arbre</button>
-      <button class="btn danger" data-delete="${esc(p.id)}">Supprimer</button>
+      <button class="btn danger edit-only" data-delete="${esc(p.id)}">Supprimer</button>
     </div>`;
 }
 
@@ -367,21 +421,21 @@ form.addEventListener('submit', (ev) => {
   if (!data.firstName || !data.lastName) return formError('Le prénom et le nom sont obligatoires.');
 
   const existing = byId(id);
-  const oldSpouses = existing ? existing.spouseIds : [];
-  if (existing) Object.assign(existing, data);
-  else people.push(data);
+  mutate(`${existing ? 'Modification' : 'Ajout'} de ${fullName(data)}`, () => {
+    const oldSpouses = existing ? existing.spouseIds : [];
+    if (existing) Object.assign(existing, data);
+    else people.push(data);
 
-  // Conjoints : on garde le lien des deux côtés.
-  for (const sid of oldSpouses) if (!spouseIds.includes(sid)) {
-    const s = byId(sid);
-    if (s) s.spouseIds = s.spouseIds.filter((x) => x !== id);
-  }
-  for (const sid of spouseIds) {
-    const s = byId(sid);
-    if (s && !s.spouseIds.includes(id)) s.spouseIds.push(id);
-  }
-
-  save();
+    // Conjoints : on garde le lien des deux côtés.
+    for (const sid of oldSpouses) if (!spouseIds.includes(sid)) {
+      const s = byId(sid);
+      if (s) s.spouseIds = s.spouseIds.filter((x) => x !== id);
+    }
+    for (const sid of spouseIds) {
+      const s = byId(sid);
+      if (s && !s.spouseIds.includes(id)) s.spouseIds.push(id);
+    }
+  });
   dialog.close();
   toast(existing ? 'Modifications enregistrées' : 'Personne ajoutée');
   if (location.hash === `#/personne/${id}`) route();
@@ -389,17 +443,16 @@ form.addEventListener('submit', (ev) => {
 });
 
 $('#cancelBtn').addEventListener('click', () => dialog.close());
+// Des mises à jour d'autres membres ont pu arriver pendant la saisie.
+dialog.addEventListener('close', () => SHARED && refresh());
 
 function deletePerson(id) {
   const p = byId(id);
   if (!p || !confirm(`Supprimer ${fullName(p)} ? Les liens avec cette personne seront retirés.`)) return;
-  people = people.filter((o) => o.id !== id);
-  for (const o of people) {
-    if (o.fatherId === id) o.fatherId = '';
-    if (o.motherId === id) o.motherId = '';
-    o.spouseIds = o.spouseIds.filter((x) => x !== id);
-  }
-  save();
+  mutate(`Suppression de ${fullName(p)}`, () => {
+    people = people.filter((o) => o.id !== id);
+    repairLinks();
+  });
   toast('Personne supprimée');
   go('#/liste');
 }
@@ -497,12 +550,14 @@ function importJson(file) {
       // Fusion : les fiches de même identifiant sont mises à jour, les autres ajoutées.
       let added = 0;
       let updated = 0;
-      for (const p of incoming) {
-        const existing = byId(p.id);
-        if (existing) { Object.assign(existing, p); updated++; }
-        else { people.push(p); added++; }
-      }
-      save();
+      mutate(`Import de ${incoming.length} personne(s)`, () => {
+        for (const p of incoming) {
+          const existing = byId(p.id);
+          if (existing) { Object.assign(existing, p); updated++; }
+          else { people.push(p); added++; }
+        }
+        repairLinks();
+      });
       $('#menuDialog').close();
       toast(`Import : ${added} ajoutée(s), ${updated} mise(s) à jour`);
       route();
@@ -584,8 +639,241 @@ $('#clearBtn').addEventListener('click', () => {
   route();
 });
 
-window.addEventListener('hashchange', route);
-route();
+/* ---------------------- Mode partagé : connexion ------------------------ */
+
+let authState = 'loading'; // loading | signed-out | no-access | error
+let authError = '';
+
+function renderLogin() {
+  const box = $('#view-login');
+  if (authState === 'loading') {
+    box.innerHTML = '<p class="empty">Connexion…</p>';
+    return;
+  }
+  if (authState === 'no-access') {
+    box.innerHTML = `
+      <div class="card">
+        <h2>Accès en attente</h2>
+        <p>Vous êtes connecté·e avec <strong>${esc(account.email)}</strong>, mais cette adresse n’a pas encore accès à l’arbre.</p>
+        <p class="muted">Demandez à l’administrateur de la famille d’ajouter cette adresse. La page s’ouvrira automatiquement dès que ce sera fait.</p>
+        <button class="btn" data-signout>Changer de compte</button>
+      </div>`;
+    return;
+  }
+  box.innerHTML = `
+    <div class="card">
+      <h2>Bienvenue</h2>
+      <p class="muted">Cet arbre est réservé à la famille. Connectez-vous pour le consulter.</p>
+      <button class="btn primary wide" id="googleBtn">Continuer avec Google</button>
+      <p class="or">ou, sans compte Google</p>
+      <form id="emailForm">
+        <label>Votre adresse e-mail
+          <input type="email" name="email" required autocomplete="email" inputmode="email">
+        </label>
+        <button class="btn wide" type="submit">Recevoir un lien de connexion</button>
+      </form>
+      <p id="loginMsg" class="${authError ? 'error' : 'muted'}">${esc(authError)}</p>
+    </div>`;
+  $('#googleBtn').addEventListener('click', () =>
+    cloud.signInGoogle().catch((e) => showLoginMsg(e.message, true))
+  );
+  $('#emailForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = e.target.email.value.trim();
+    showLoginMsg('Envoi…');
+    try {
+      await cloud.sendEmailLink(email);
+      showLoginMsg(`Un lien a été envoyé à ${email}. Ouvrez-le sur ce téléphone pour vous connecter (pensez à regarder dans les indésirables).`);
+    } catch (err) {
+      showLoginMsg(err.message, true);
+    }
+  });
+}
+
+function showLoginMsg(msg, isError = false) {
+  authError = isError ? msg : '';
+  const el = $('#loginMsg');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = isError ? 'error' : 'muted';
+}
+
+const ROLE_LABELS = { viewer: 'Lecture seule', editor: 'Peut modifier', admin: 'Administrateur' };
+
+function renderAccount() {
+  $('#accountInfo').innerHTML = account
+    ? `Connecté·e : <strong>${esc(account.email)}</strong><br>${esc(ROLE_LABELS[role] || 'sans accès')}`
+    : '';
+}
+
+async function startShared() {
+  route();
+  try {
+    cloud = await import('./cloud.js');
+  } catch {
+    authState = 'error';
+    $('#view-login').innerHTML = '<p class="empty error">Impossible de charger le module en ligne. Vérifiez la connexion Internet puis rechargez la page.</p>';
+    return;
+  }
+  await cloud.start(CONFIG, {
+    user(u) {
+      account = u;
+      if (!u) { role = null; people = []; authState = 'signed-out'; }
+      else authState = 'loading';
+      renderAccount();
+      route();
+    },
+    role(r) {
+      role = ROLE_LABELS[r] ? r : null;
+      authState = role ? 'ok' : 'no-access';
+      renderAccount();
+      route(true);
+    },
+    people(list) {
+      people = list.map(normalize);
+      if (!dialog.open) refresh();
+    },
+    error(msg) {
+      authError = msg;
+      toast(msg);
+      if (!role) route();
+    },
+  });
+}
+
+/** Ré-affiche la vue courante après une mise à jour venue d'un autre membre, sans remonter en haut. */
+function refresh() {
+  if (!$('#view-history').classList.contains('active')) route(true);
+}
+
+/* ---------------------- Mode partagé : historique ----------------------- */
+
+let historyUnsub = null;
+let historyEntries = [];
+
+function startHistory() {
+  if (historyUnsub) return renderHistory();
+  $('#historyList').innerHTML = '<p class="muted">Chargement…</p>';
+  historyUnsub = cloud.watchHistory(
+    (entries) => { historyEntries = entries; renderHistory(); },
+    (msg) => toast(msg)
+  );
+}
+
+function stopHistory() {
+  if (historyUnsub) historyUnsub();
+  historyUnsub = null;
+}
+
+const dateTime = (d) =>
+  d.toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+function renderHistory() {
+  $('#historyList').innerHTML = historyEntries.length
+    ? historyEntries
+        .map(
+          (h) => `
+      <li class="card history-item">
+        <div><strong>${esc(h.label)}</strong></div>
+        <div class="muted small">${esc(h.byName || h.byEmail)} · ${esc(dateTime(h.at))}</div>
+        ${h.changes.length > 1 ? `<div class="muted small">${h.changes.length} fiches concernées</div>` : ''}
+        <button class="btn small-btn edit-only" data-undo="${esc(h.id)}">Annuler cette modification</button>
+      </li>`
+        )
+        .join('')
+    : '<p class="empty">Aucune modification pour l’instant.</p>';
+}
+
+/** Annule une action : chaque fiche concernée reprend son état d'avant. */
+function undo(entryId) {
+  const h = historyEntries.find((x) => x.id === entryId);
+  if (!h) return;
+  const later = historyEntries.filter(
+    (x) => x.at > h.at && x.changes.some((c) => h.changes.some((d) => d.id === c.id))
+  );
+  const warn = later.length
+    ? `\n\nAttention : ${later.length} modification(s) plus récente(s) touchent les mêmes personnes et seront écrasées.`
+    : '';
+  if (!confirm(`Annuler « ${h.label} » ?${warn}`)) return;
+  mutate(`Annulation : ${h.label}`, () => {
+    for (const c of h.changes) {
+      people = people.filter((p) => p.id !== c.id);
+      if (c.before) people.push(normalize({ ...c.before, id: c.id }));
+    }
+    repairLinks();
+  });
+  toast('Modification annulée');
+}
+
+/* ----------------------- Mode partagé : membres ------------------------- */
+
+let membersUnsub = null;
+
+function openMembers() {
+  $('#menuDialog').close();
+  $('#membersDialog').showModal();
+  $('#membersList').innerHTML = '<li class="muted">Chargement…</li>';
+  membersUnsub = cloud.watchMembers(renderMembers, (msg) => toast(msg));
+}
+
+function renderMembers(list) {
+  const mine = account.email.toLowerCase();
+  $('#membersList').innerHTML = list
+    .sort((a, b) => a.email.localeCompare(b.email))
+    .map(
+      (m) => `
+      <li class="member">
+        <span class="member-email">${esc(m.email)}</span>
+        <select data-member-role="${esc(m.email)}"${m.email === mine ? ' disabled' : ''}>
+          ${Object.entries(ROLE_LABELS).map(([k, v]) => `<option value="${k}"${k === m.role ? ' selected' : ''}>${v}</option>`).join('')}
+        </select>
+        ${m.email === mine ? '' : `<button class="icon-btn small" data-member-remove="${esc(m.email)}" aria-label="Retirer">✕</button>`}
+      </li>`
+    )
+    .join('');
+}
+
+$('#membersDialog').addEventListener('close', () => {
+  if (membersUnsub) membersUnsub();
+  membersUnsub = null;
+});
+$('#closeMembersBtn').addEventListener('click', () => $('#membersDialog').close());
+$('#addMemberForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const input = e.target.email;
+  const email = input.value.trim();
+  input.value = '';
+  try {
+    await cloud.setMember(email, e.target.role.value);
+    toast(`${email} ajouté·e. Envoyez-lui l’adresse du site.`);
+  } catch (err) {
+    input.value = email;
+    toast(err.message);
+  }
+});
+$('#membersList').addEventListener('change', (e) => {
+  const email = e.target.dataset.memberRole;
+  if (email) cloud.setMember(email, e.target.value).then(() => toast('Droits modifiés'), (err) => toast(err.message));
+});
+$('#membersList').addEventListener('click', (e) => {
+  const email = e.target.closest('[data-member-remove]')?.dataset.memberRemove;
+  if (email && confirm(`Retirer l’accès de ${email} ?`)) {
+    cloud.removeMember(email).then(() => toast('Accès retiré'), (err) => toast(err.message));
+  }
+});
+
+$('#historyBtn').addEventListener('click', () => { $('#menuDialog').close(); go('#/historique'); });
+$('#membersBtn').addEventListener('click', openMembers);
+$('#signOutBtn').addEventListener('click', () => { $('#menuDialog').close(); cloud.signOut(); });
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-signout]')) cloud.signOut();
+  const undoId = e.target.closest('[data-undo]')?.dataset.undo;
+  if (undoId) undo(undoId);
+});
+
+window.addEventListener('hashchange', () => route());
+if (SHARED) startShared();
+else route();
 
 // Mode hors ligne / installation sur l'écran d'accueil (nécessite HTTPS ou localhost).
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {

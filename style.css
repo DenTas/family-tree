@@ -175,3 +175,27 @@ legend { padding: 0 6px; font-weight: 600; }
   background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 10px; z-index: 20;
   max-width: calc(100vw - 32px);
 }
+
+/* Mode partagé : affichage selon les droits */
+body:not(.can-edit) .edit-only,
+body:not(.is-admin) .admin-only,
+body:not(.shared) .shared-only,
+body.shared .local-only,
+body.locked .tabs,
+body.locked .fab,
+body.locked #menuBtn { display: none !important; }
+
+.wide { width: 100%; }
+.or { text-align: center; color: var(--muted); margin: 16px 0 8px; font-size: .9rem; }
+#view-history h2 { font-size: 1.15rem; margin: 0 0 12px; }
+.history-list { list-style: none; padding: 0; margin: 0; }
+.history-item { display: grid; gap: 4px; }
+.small-btn { justify-self: start; margin-top: 6px; padding: 7px 12px; font-size: .875rem; }
+.members-list { list-style: none; padding: 0; margin: 0 0 12px; display: grid; gap: 8px; }
+.member { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; }
+.member-email { overflow-wrap: anywhere; font-size: .9rem; }
+.member select { width: auto; margin: 0; padding: 6px 8px; font-size: .85rem; }
+.icon-btn.small { width: 36px; height: 36px; font-size: 1rem; color: var(--muted); }
+.add-member { display: grid; grid-template-columns: 1fr auto; gap: 6px; margin-bottom: 12px; }
+.add-member input { grid-column: 1 / -1; margin: 0; }
+.add-member select { margin: 0; }

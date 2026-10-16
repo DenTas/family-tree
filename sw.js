@@ -1,6 +1,6 @@
 // Service worker : met l'application en cache pour qu'elle fonctionne hors ligne.
-const CACHE = 'arbre-familial-v1';
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icon.svg'];
+const CACHE = 'arbre-familial-v2';
+const FILES = ['./', 'index.html', 'style.css', 'app.js', 'cloud.js', 'config.js', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)));
@@ -15,8 +15,12 @@ self.addEventListener('activate', (e) => {
 });
 
 // Réseau d'abord (pour recevoir les mises à jour), cache en secours.
+// Seuls les fichiers du site et la bibliothèque Firebase sont mis en cache : les échanges
+// avec la base de données passent directement (Firestore gère lui-même le hors-ligne).
 self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET') return;
+  const url = new URL(e.request.url);
+  const cacheable = url.origin === location.origin || url.href.startsWith('https://www.gstatic.com/firebasejs/');
+  if (e.request.method !== 'GET' || !cacheable) return;
   e.respondWith(
     fetch(e.request)
       .then((res) => {

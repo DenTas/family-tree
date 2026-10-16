@@ -1,0 +1,78 @@
+rules_version = '2';
+
+// Règles de sécurité de la base Firestore de l'arbre familial.
+// À copier dans la console Firebase : Firestore Database → Règles → Publier.
+//
+// Rôles (fiche members/<email en minuscules>, champ "role") :
+//   viewer : consulte l'arbre et l'historique
+//   editor : peut en plus ajouter, modifier, supprimer et annuler
+//   admin  : peut en plus gérer les membres
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      // Adresse vérifiée obligatoire (Google ou lien par e-mail) : personne ne peut
+      // se faire passer pour un membre en créant un compte avec son adresse.
+      return request.auth != null
+        && request.auth.token.email != null
+        && request.auth.token.email_verified == true;
+    }
+    function memberPath() {
+      return /databases/$(database)/documents/members/$(request.auth.token.email.lower());
+    }
+    function isMember() { return signedIn() && exists(memberPath()); }
+    function hasRole(roles) { return isMember() && get(memberPath()).data.role in roles; }
+    function canEdit() { return hasRole(['editor', 'admin']); }
+    function isAdmin() { return hasRole(['admin']); }
+
+    function isText(v, max) { return v is string && v.size() <= max; }
+    function validPerson(d) {
+      return d.keys().hasOnly(['firstName', 'lastName', 'sex', 'birthDate', 'birthPlace', 'deathDate',
+                               'fatherId', 'motherId', 'spouseIds', 'notes', 'updatedBy', 'updatedAt'])
+        && isText(d.firstName, 100) && d.firstName.size() > 0
+        && isText(d.lastName, 100) && d.lastName.size() > 0
+        && d.sex in ['M', 'F', 'U']
+        && isText(d.birthDate, 10) && isText(d.deathDate, 10) && isText(d.birthPlace, 200)
+        && isText(d.fatherId, 64) && isText(d.motherId, 64)
+        && d.spouseIds is list && d.spouseIds.size() <= 30
+        && isText(d.notes, 5000)
+        // Chaque fiche garde la trace de sa dernière modification.
+        && d.updatedBy == request.auth.uid
+        && d.updatedAt == request.time;
+    }
+
+    match /people/{personId} {
+      allow read: if isMember();
+      allow create, update: if canEdit() && validPerson(request.resource.data);
+      allow delete: if canEdit();
+    }
+
+    // Historique : on peut seulement y ajouter des entrées signées de son propre compte.
+    // Personne (même l'administrateur) ne peut le modifier ou l'effacer depuis l'application.
+    match /history/{entryId} {
+      allow read: if isMember();
+      allow create: if canEdit()
+        && request.resource.data.keys().hasOnly(['label', 'changes', 'byUid', 'byEmail', 'byName', 'at'])
+        && isText(request.resource.data.label, 300)
+        && request.resource.data.changes is list
+        && request.resource.data.changes.size() > 0
+        && request.resource.data.changes.size() <= 200
+        && request.resource.data.byUid == request.auth.uid
+        && request.resource.data.byEmail == request.auth.token.email
+        && request.resource.data.at == request.time;
+      allow update, delete: if false;
+    }
+
+    match /members/{email} {
+      // Chacun peut lire sa propre fiche (pour connaître son rôle) ; l'administrateur voit tout.
+      allow read: if isAdmin() || (signedIn() && email == request.auth.token.email.lower());
+      allow create, update: if isAdmin()
+        && email == email.lower()
+        && request.resource.data.keys().hasOnly(['role', 'addedBy'])
+        && request.resource.data.role in ['viewer', 'editor', 'admin']
+        // L'administrateur ne peut pas se retirer ses propres droits (pour ne pas perdre l'accès).
+        && (email != request.auth.token.email.lower() || request.resource.data.role == 'admin');
+      allow delete: if isAdmin() && email != request.auth.token.email.lower();
+    }
+  }
+}

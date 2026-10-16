@@ -23,6 +23,16 @@
   </nav>
 
   <main>
+    <!-- Connexion (mode partagé) -->
+    <section id="view-login" class="view"></section>
+
+    <!-- Historique des modifications (mode partagé) -->
+    <section id="view-history" class="view">
+      <button class="back" data-back>← Retour</button>
+      <h2>Historique des modifications</h2>
+      <ul id="historyList" class="history-list"></ul>
+    </section>
+
     <!-- Liste des personnes -->
     <section id="view-list" class="view active">
       <input id="search" type="search" placeholder="Rechercher un nom, un prénom…" autocomplete="off">
@@ -51,7 +61,7 @@
     </section>
   </main>
 
-  <button id="addBtn" class="fab" aria-label="Ajouter une personne">+</button>
+  <button id="addBtn" class="fab edit-only" aria-label="Ajouter une personne">+</button>
 
   <!-- Formulaire ajout / modification -->
   <dialog id="personDialog">
@@ -97,22 +107,44 @@
 
   <!-- Menu -->
   <dialog id="menuDialog">
-    <h2>Données</h2>
-    <p class="muted small">Les données restent sur ce téléphone. Pour les partager, exportez un fichier et envoyez-le à la famille, qui l’importera.</p>
+    <h2>Menu</h2>
+    <p id="accountInfo" class="small shared-only"></p>
+    <p class="muted small local-only">Les données restent sur ce téléphone. Pour les partager, exportez un fichier et envoyez-le à la famille, qui l’importera.</p>
     <div class="menu-list">
+      <button class="btn shared-only" id="historyBtn">🕘 Historique des modifications</button>
+      <button class="btn shared-only admin-only" id="membersBtn">👥 Membres et droits d’accès</button>
       <button class="btn" id="exportJsonBtn">📤 Exporter / partager (JSON)</button>
       <button class="btn" id="exportGedBtn">📄 Exporter au format GEDCOM</button>
-      <label class="btn file-btn">📥 Importer un fichier JSON
+      <label class="btn file-btn edit-only">📥 Importer un fichier JSON
         <input type="file" id="importInput" accept=".json,application/json" hidden>
       </label>
-      <button class="btn" id="demoBtn">🧪 Charger un exemple</button>
-      <button class="btn danger" id="clearBtn">🗑️ Tout effacer</button>
+      <button class="btn local-only" id="demoBtn">🧪 Charger un exemple</button>
+      <button class="btn danger local-only" id="clearBtn">🗑️ Tout effacer</button>
+      <button class="btn shared-only" id="signOutBtn">Se déconnecter</button>
       <button class="btn" id="closeMenuBtn">Fermer</button>
     </div>
   </dialog>
 
+  <!-- Membres (administrateur, mode partagé) -->
+  <dialog id="membersDialog">
+    <h2>Membres et droits d’accès</h2>
+    <p class="muted small">Ajoutez l’adresse e-mail de chaque membre de la famille (celle de son compte Google, ou celle où il recevra son lien de connexion).</p>
+    <ul id="membersList" class="members-list"></ul>
+    <form id="addMemberForm" class="add-member">
+      <input type="email" name="email" placeholder="adresse@exemple.fr" required autocomplete="off">
+      <select name="role">
+        <option value="viewer">Lecture seule</option>
+        <option value="editor">Peut modifier</option>
+        <option value="admin">Administrateur</option>
+      </select>
+      <button class="btn primary" type="submit">Ajouter</button>
+    </form>
+    <div class="form-actions"><button class="btn" id="closeMembersBtn">Fermer</button></div>
+  </dialog>
+
   <div id="toast" class="toast" hidden></div>
 
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
