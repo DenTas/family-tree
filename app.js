@@ -4,7 +4,7 @@
  * Arbre familial — application web mobile, sans dépendance ni serveur.
  *
  * Modèle de données (une personne) :
- *   { id, firstName, lastName, sex: 'M'|'F'|'U',
+ *   { id, firstName, middleNames, lastName, sex: 'M'|'F'|'U',
  *     birthDate, birthPlace, deathDate, deathPlace,   // dates : 'AAAA', 'AAAA-MM' ou 'AAAA-MM-JJ'
  *     fatherId, motherId, spouseIds: [], notes }
  *
@@ -65,6 +65,7 @@ function normalize(p) {
     id: String(p.id || newId()),
     firstName: String(p.firstName || '').trim(),
     lastName: String(p.lastName || '').trim(),
+    middleNames: String(p.middleNames || '').trim(), // autres prénoms (ex. « Pierre Daniel »)
     sex: ['M', 'F'].includes(p.sex) ? p.sex : 'U',
     birthDate: p.birthDate || '',
     birthPlace: String(p.birthPlace || '').trim(),
@@ -206,6 +207,8 @@ function esc(s) {
 }
 
 const fullName = (p) => `${p.firstName} ${p.lastName}`.trim();
+/** Nom complet avec tous les prénoms, pour la fiche et les infobulles. */
+const completeName = (p) => [p.firstName, p.middleNames, p.lastName].filter(Boolean).join(' ');
 const initials = (p) => ((p.firstName[0] || '') + (p.lastName[0] || '')).toUpperCase();
 
 function sortPeople(list) {
@@ -348,7 +351,7 @@ const go = (hash) => (location.hash = hash);
 function renderList() {
   const q = fold($('#search').value.trim());
   const list = sortPeople(people).filter(
-    (p) => !q || fold(`${p.firstName} ${p.lastName} ${p.birthPlace} ${p.deathPlace}`).includes(q)
+    (p) => !q || fold(`${p.firstName} ${p.middleNames} ${p.lastName} ${p.birthPlace} ${p.deathPlace}`).includes(q)
   );
   $('#personList').innerHTML = list
     .map(
@@ -389,7 +392,7 @@ function renderPerson(id) {
     <button class="back" data-back>← Retour</button>
     <div class="card person-head">
       ${avatarHtml(p, 'avatar big')}
-      <h2>${esc(fullName(p))}</h2>
+      <h2>${esc(completeName(p))}</h2>
       <div class="photo-actions edit-only">
         <label class="btn small-btn">📷 ${p.photo ? 'Changer la photo' : 'Ajouter une photo'}
           <input type="file" accept="image/*" data-photo-input="${esc(p.id)}" hidden>
@@ -443,7 +446,7 @@ function treeCardHtml(p, fields) {
 }
 
 function cardTitle(p) {
-  return [fullName(p), lifespan(p), p.birthPlace].filter(Boolean).join(' · ');
+  return [completeName(p), lifespan(p), p.birthPlace].filter(Boolean).join(' · ');
 }
 
 function initTree() {
@@ -572,6 +575,7 @@ function openForm(person = null, preset = {}) {
   $('#formTitle').textContent = person ? 'Modifier' : 'Nouvelle personne';
   form.personId.value = person ? p.id : '';
   form.firstName.value = p.firstName;
+  form.middleNames.value = p.middleNames;
   form.lastName.value = p.lastName;
   form.sex.value = p.sex;
   form.birthDate.value = formatDate(p.birthDate);
@@ -640,6 +644,7 @@ form.addEventListener('submit', (ev) => {
   const data = normalize({
     id,
     firstName: form.firstName.value,
+    middleNames: form.middleNames.value,
     lastName: form.lastName.value,
     sex: form.sex.value,
     birthDate,
@@ -764,8 +769,9 @@ function toGedcom() {
 
   const out = ['0 HEAD', '1 SOUR ARBRE_FAMILIAL', '1 GEDC', '2 VERS 5.5.1', '2 FORM LINEAGE-LINKED', '1 CHAR UTF-8'];
   for (const p of people) {
-    out.push(`0 ${indi.get(p.id)} INDI`, `1 NAME ${clean(p.firstName)} /${clean(p.lastName)}/`);
-    out.push(`2 GIVN ${clean(p.firstName)}`, `2 SURN ${clean(p.lastName)}`);
+    const given = clean([p.firstName, p.middleNames].filter(Boolean).join(' '));
+    out.push(`0 ${indi.get(p.id)} INDI`, `1 NAME ${given} /${clean(p.lastName)}/`);
+    out.push(`2 GIVN ${given}`, `2 SURN ${clean(p.lastName)}`);
     if (p.sex !== 'U') out.push(`1 SEX ${p.sex}`);
     if (p.birthDate || p.birthPlace) {
       out.push('1 BIRT');
