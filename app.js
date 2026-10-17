@@ -70,6 +70,7 @@ function normalize(p) {
     birthDate: p.birthDate || '',
     birthPlace: String(p.birthPlace || '').trim(),
     deathPlace: String(p.deathPlace || '').trim(),
+    deceased: p.deceased === true, // décédé·e même sans date ni lieu connus
     deathDate: p.deathDate || '',
     fatherId: p.fatherId || '',
     motherId: p.motherId || '',
@@ -175,8 +176,8 @@ function formatDate(iso) {
 
 const year = (iso) => (iso ? iso.slice(0, 4) : '');
 
-/** Décédé·e : date ou lieu de décès renseigné. */
-const isDeceased = (p) => Boolean(p.deathDate || p.deathPlace);
+/** Décédé·e : case cochée, ou date ou lieu de décès renseigné. */
+const isDeceased = (p) => Boolean(p.deceased || p.deathDate || p.deathPlace);
 
 /** Petite croix après le nom des personnes décédées. */
 const deathMark = (p) => (isDeceased(p) ? ' <span class="dagger" title="Décédé·e">†</span>' : '');
@@ -389,7 +390,7 @@ function renderPerson(id) {
   const p = byId(id);
   const facts = [
     ['Naissance', [formatDate(p.birthDate), p.birthPlace].filter(Boolean).join(' à ')],
-    ['Décès', [formatDate(p.deathDate), p.deathPlace].filter(Boolean).join(' à ')],
+    ['Décès', [formatDate(p.deathDate), p.deathPlace].filter(Boolean).join(' à ') || (p.deceased ? 'date inconnue' : '')],
     ['Âge', ageText(p)],
     ['Sexe', { M: 'Homme', F: 'Femme' }[p.sex] || ''],
   ].filter(([, v]) => v);
@@ -587,6 +588,7 @@ function openForm(person = null, preset = {}) {
   form.birthDate.value = formatDate(p.birthDate);
   form.birthPlace.value = p.birthPlace;
   form.deathPlace.value = p.deathPlace;
+  form.deceased.checked = isDeceased(p);
   form.deathDate.value = formatDate(p.deathDate);
   form.notes.value = p.notes;
 
@@ -656,6 +658,8 @@ form.addEventListener('submit', (ev) => {
     birthDate,
     birthPlace: form.birthPlace.value,
     deathPlace: form.deathPlace.value,
+    // Une date ou un lieu de décès suffit ; la case sert quand on ne connaît ni l'un ni l'autre.
+    deceased: form.deceased.checked && !form.deathDate.value.trim() && !form.deathPlace.value.trim(),
     deathDate,
     fatherId,
     motherId,
@@ -687,6 +691,13 @@ form.addEventListener('submit', (ev) => {
 });
 
 $('#cancelBtn').addEventListener('click', () => dialog.close());
+// Saisir une date ou un lieu de décès coche « Décédé(e) ».
+for (const field of [form.deathDate, form.deathPlace]) {
+  field.addEventListener('input', () => {
+    if (field.value.trim()) form.deceased.checked = true;
+  });
+}
+
 // Affiche la date telle qu'elle a été comprise (28021974 → 28/02/1974).
 for (const field of [form.birthDate, form.deathDate]) {
   field.addEventListener('blur', () => {
@@ -784,6 +795,7 @@ function toGedcom() {
       if (p.birthDate) out.push(`2 DATE ${gedDate(p.birthDate)}`);
       if (p.birthPlace) out.push(`2 PLAC ${clean(p.birthPlace)}`);
     }
+    if (p.deceased && !p.deathDate && !p.deathPlace) out.push('1 DEAT Y'); // décès sans date ni lieu
     if (p.deathDate || p.deathPlace) {
       out.push('1 DEAT');
       if (p.deathDate) out.push(`2 DATE ${gedDate(p.deathDate)}`);

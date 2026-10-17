@@ -141,6 +141,8 @@ legend { padding: 0 6px; font-weight: 600; }
   border-radius: 999px; padding: 6px 12px; font: inherit; font-size: .9rem; cursor: pointer;
 }
 .dagger { font-weight: 700; color: var(--text); margin-left: 3px; }
+label.check { display: flex; align-items: center; gap: 8px; color: var(--text); }
+label.check input { width: auto; margin: 0; }
 .field-label { font-size: .9rem; color: var(--muted); margin-bottom: 6px; }
 .spouse-chips { margin-bottom: 8px; }
 .chip.removable span { margin-left: 4px; color: var(--muted); }
