@@ -127,15 +127,20 @@ function isAncestor(ancestorId, id, seen = new Set()) {
 
 /* ------------------------------- Dates --------------------------------- */
 
-/** Accepte JJ/MM/AAAA, MM/AAAA, AAAA (ou séparateurs - .) et AAAA-MM-JJ. */
+/**
+ * Accepte JJ/MM/AAAA, MM/AAAA, AAAA et AAAA-MM-JJ, avec / . - ou espace comme séparateur,
+ * ou les chiffres seuls (28021974, 021974) car le clavier numérique des téléphones n'a pas toujours « / ».
+ */
 function parseDate(input) {
   const s = String(input || '').trim();
   if (!s) return '';
   let m;
   let y, mo, d;
   if ((m = s.match(/^(\d{4})(?:-(\d{1,2})(?:-(\d{1,2}))?)?$/))) [, y, mo, d] = m;
-  else if ((m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/))) [, d, mo, y] = m;
-  else if ((m = s.match(/^(\d{1,2})[/.-](\d{4})$/))) [, mo, y] = m;
+  else if ((m = s.match(/^(\d{2})(\d{2})(\d{4})$/))) [, d, mo, y] = m;
+  else if ((m = s.match(/^(\d{2})(\d{4})$/))) [, mo, y] = m;
+  else if ((m = s.match(/^(\d{1,2})[/.\-\s,]+(\d{1,2})[/.\-\s,]+(\d{4})$/))) [, d, mo, y] = m;
+  else if ((m = s.match(/^(\d{1,2})[/.\-\s,]+(\d{4})$/))) [, mo, y] = m;
   else return null;
 
   if (mo && (mo < 1 || mo > 12)) return null;
@@ -395,8 +400,8 @@ form.addEventListener('submit', (ev) => {
   ev.preventDefault();
   const birthDate = parseDate(form.birthDate.value);
   const deathDate = parseDate(form.deathDate.value);
-  if (birthDate === null) return formError('Date de naissance invalide (ex. 24/05/1952, 05/1952 ou 1952).');
-  if (deathDate === null) return formError('Date de décès invalide (ex. 24/05/1952, 05/1952 ou 1952).');
+  if (birthDate === null) return formError('Date de naissance invalide (ex. 24051952, 24/05/1952 ou 1952).');
+  if (deathDate === null) return formError('Date de décès invalide (ex. 24051952, 24/05/1952 ou 1952).');
   if (birthDate && deathDate && deathDate < birthDate) return formError('Le décès est antérieur à la naissance.');
 
   const id = form.personId.value || newId();
@@ -443,6 +448,13 @@ form.addEventListener('submit', (ev) => {
 });
 
 $('#cancelBtn').addEventListener('click', () => dialog.close());
+// Affiche la date telle qu'elle a été comprise (28021974 → 28/02/1974).
+for (const field of [form.birthDate, form.deathDate]) {
+  field.addEventListener('blur', () => {
+    const iso = parseDate(field.value);
+    if (iso) field.value = formatDate(iso);
+  });
+}
 // Des mises à jour d'autres membres ont pu arriver pendant la saisie.
 dialog.addEventListener('close', () => SHARED && refresh());
 
