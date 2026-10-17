@@ -136,7 +136,9 @@ function dbMessage(e) {
 
 /* ------------------------------ Écriture -------------------------------- */
 
-const personData = ({ id, ...rest }) => rest;
+// Champ « photo » omis quand il est vide : une fiche sans photo reste acceptée par des règles
+// Firestore antérieures aux photos (et set() remplace le document, donc retirer une photo marche).
+const personData = ({ id, photo, ...rest }) => (photo ? { ...rest, photo } : rest);
 
 /**
  * Enregistre une action (ex. « Ajout de Jean Martin ») : les fiches modifiées
