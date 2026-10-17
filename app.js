@@ -175,11 +175,17 @@ function formatDate(iso) {
 
 const year = (iso) => (iso ? iso.slice(0, 4) : '');
 
+/** Décédé·e : date ou lieu de décès renseigné. */
+const isDeceased = (p) => Boolean(p.deathDate || p.deathPlace);
+
+/** Petite croix après le nom des personnes décédées. */
+const deathMark = (p) => (isDeceased(p) ? ' <span class="dagger" title="Décédé·e">†</span>' : '');
+
 function lifespan(p) {
   const b = year(p.birthDate);
   const d = year(p.deathDate);
-  if (!b && !d) return '';
-  return d ? `${b || '?'} – ${d}` : `né${p.sex === 'F' ? 'e' : ''} en ${b}`;
+  if (isDeceased(p)) return b || d ? `${b || '?'} – ${d || '?'}` : '';
+  return b ? `né${p.sex === 'F' ? 'e' : ''} en ${b}` : '';
 }
 
 /** Âge actuel, ou âge au décès. « ≈ » quand la date est incomplète. */
@@ -191,7 +197,7 @@ function ageText(p) {
   let age = ey - by;
   if (bm && em && (em < bm || (em === bm && bd && ed && ed < bd))) age--;
   const approx = !bm || !em || (!bd && em === bm) ? '≈' : '';
-  if (age < 0 || (!p.deathDate && age > 110)) return '';
+  if (age < 0 || (!p.deathDate && (isDeceased(p) || age > 110))) return '';
   return p.deathDate ? `décédé${p.sex === 'F' ? 'e' : ''} à ${approx}${age} ans` : `${approx}${age} ans`;
 }
 
@@ -359,7 +365,7 @@ function renderList() {
       <li class="person-item" data-id="${esc(p.id)}">
         ${avatarHtml(p)}
         <span>
-          <span class="name">${esc(fullName(p))}</span><br>
+          <span class="name">${esc(fullName(p))}${deathMark(p)}</span><br>
           <span class="meta">${esc([lifespan(p), p.birthPlace].filter(Boolean).join(' · '))}</span>
         </span>
       </li>`
@@ -392,7 +398,7 @@ function renderPerson(id) {
     <button class="back" data-back>← Retour</button>
     <div class="card person-head">
       ${avatarHtml(p, 'avatar big')}
-      <h2>${esc(completeName(p))}</h2>
+      <h2>${esc(completeName(p))}${deathMark(p)}</h2>
       <div class="photo-actions edit-only">
         <label class="btn small-btn">📷 ${p.photo ? 'Changer la photo' : 'Ajouter une photo'}
           <input type="file" accept="image/*" data-photo-input="${esc(p.id)}" hidden>
@@ -441,7 +447,7 @@ function treeCardHtml(p, fields) {
   return `
     ${fields.has('photo') ? avatarHtml(p, 'avatar card-photo') : ''}
     <span class="card-first">${esc(p.firstName)}</span>
-    <span class="card-last">${esc(p.lastName)}</span>
+    <span class="card-last">${esc(p.lastName)}${deathMark(p)}</span>
     ${lines.map((l) => `<span class="card-line">${esc(l) || '&nbsp;'}</span>`).join('')}`;
 }
 
