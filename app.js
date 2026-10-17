@@ -5,7 +5,7 @@
  *
  * Modèle de données (une personne) :
  *   { id, firstName, lastName, sex: 'M'|'F'|'U',
- *     birthDate, birthPlace, deathDate,   // dates : 'AAAA', 'AAAA-MM' ou 'AAAA-MM-JJ'
+ *     birthDate, birthPlace, deathDate, deathPlace,   // dates : 'AAAA', 'AAAA-MM' ou 'AAAA-MM-JJ'
  *     fatherId, motherId, spouseIds: [], notes }
  *
  * Les frères/sœurs et les enfants ne sont pas stockés : ils sont déduits
@@ -68,6 +68,7 @@ function normalize(p) {
     sex: ['M', 'F'].includes(p.sex) ? p.sex : 'U',
     birthDate: p.birthDate || '',
     birthPlace: String(p.birthPlace || '').trim(),
+    deathPlace: String(p.deathPlace || '').trim(),
     deathDate: p.deathDate || '',
     fatherId: p.fatherId || '',
     motherId: p.motherId || '',
@@ -347,7 +348,7 @@ const go = (hash) => (location.hash = hash);
 function renderList() {
   const q = fold($('#search').value.trim());
   const list = sortPeople(people).filter(
-    (p) => !q || fold(`${p.firstName} ${p.lastName} ${p.birthPlace}`).includes(q)
+    (p) => !q || fold(`${p.firstName} ${p.lastName} ${p.birthPlace} ${p.deathPlace}`).includes(q)
   );
   $('#personList').innerHTML = list
     .map(
@@ -379,7 +380,7 @@ function renderPerson(id) {
   const p = byId(id);
   const facts = [
     ['Naissance', [formatDate(p.birthDate), p.birthPlace].filter(Boolean).join(' à ')],
-    ['Décès', formatDate(p.deathDate)],
+    ['Décès', [formatDate(p.deathDate), p.deathPlace].filter(Boolean).join(' à ')],
     ['Âge', ageText(p)],
     ['Sexe', { M: 'Homme', F: 'Femme' }[p.sex] || ''],
   ].filter(([, v]) => v);
@@ -418,7 +419,7 @@ const sortByBirth = (list) =>
 
 // Réglages d'affichage de l'arbre, mémorisés sur ce téléphone.
 const PREFS_KEY = 'arbre-familial:affichage';
-const FIELD_LABELS = { photo: 'Photo', years: 'Années', birth: 'Date de naissance', place: 'Lieu de naissance', age: 'Âge' };
+const FIELD_LABELS = { photo: 'Photo', years: 'Années', birth: 'Date de naissance', place: 'Lieu de naissance', deathPlace: 'Lieu de décès', age: 'Âge' };
 const prefs = { depth: 2, mode: 'all', fields: ['photo', 'years'], ...loadJson(PREFS_KEY, {}) };
 const savePrefs = () => {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* préférence non mémorisée */ }
@@ -432,6 +433,7 @@ function treeCardHtml(p, fields) {
   if (fields.has('years')) lines.push(lifespan(p));
   if (fields.has('birth')) lines.push(p.birthDate ? `° ${formatDate(p.birthDate)}` : '');
   if (fields.has('place')) lines.push(p.birthPlace);
+  if (fields.has('deathPlace')) lines.push(p.deathPlace ? `† ${p.deathPlace}` : '');
   if (fields.has('age')) lines.push(ageText(p));
   return `
     ${fields.has('photo') ? avatarHtml(p, 'avatar card-photo') : ''}
@@ -574,6 +576,7 @@ function openForm(person = null, preset = {}) {
   form.sex.value = p.sex;
   form.birthDate.value = formatDate(p.birthDate);
   form.birthPlace.value = p.birthPlace;
+  form.deathPlace.value = p.deathPlace;
   form.deathDate.value = formatDate(p.deathDate);
   form.notes.value = p.notes;
 
@@ -641,6 +644,7 @@ form.addEventListener('submit', (ev) => {
     sex: form.sex.value,
     birthDate,
     birthPlace: form.birthPlace.value,
+    deathPlace: form.deathPlace.value,
     deathDate,
     fatherId,
     motherId,
@@ -768,7 +772,11 @@ function toGedcom() {
       if (p.birthDate) out.push(`2 DATE ${gedDate(p.birthDate)}`);
       if (p.birthPlace) out.push(`2 PLAC ${clean(p.birthPlace)}`);
     }
-    if (p.deathDate) out.push('1 DEAT', `2 DATE ${gedDate(p.deathDate)}`);
+    if (p.deathDate || p.deathPlace) {
+      out.push('1 DEAT');
+      if (p.deathDate) out.push(`2 DATE ${gedDate(p.deathDate)}`);
+      if (p.deathPlace) out.push(`2 PLAC ${clean(p.deathPlace)}`);
+    }
     for (const f of fams.values()) {
       if (f.children.includes(p.id)) out.push(`1 FAMC ${f.id}`);
       if (f.husb === p.id || f.wife === p.id) out.push(`1 FAMS ${f.id}`);

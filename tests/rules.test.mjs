@@ -65,6 +65,8 @@ await t('écriture groupée de 200 fiches + historique', (async () => {
 })());
 const img = 'data:image/jpeg;base64,' + 'A'.repeat(20000);
 const photo = (uid, data = img) => ({ data, personId: 'p1', by: uid, at: serverTimestamp() });
+await t('lieu de décès accepté', assertSucceeds(setDoc(doc(editor, 'people/p6'), { ...person('ue'), deathPlace: 'Lyon' })));
+await t('lieu de décès trop long refusé', assertFails(setDoc(doc(editor, 'people/p6'), { ...person('ue'), deathPlace: 'x'.repeat(201) })));
 await t('fiche avec photo acceptée', assertSucceeds(setDoc(doc(editor, 'people/p5'), { ...person('ue'), photo: 'ph123' })));
 await t('identifiant de photo trop long refusé', assertFails(setDoc(doc(editor, 'people/p5'), { ...person('ue'), photo: 'x'.repeat(65) })));
 await t('éditeur ajoute une photo', assertSucceeds(setDoc(doc(editor, 'photos/ph1'), photo('ue'))));

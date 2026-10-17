@@ -28,7 +28,8 @@ service cloud.firestore {
     function isText(v, max) { return v is string && v.size() <= max; }
     function validPerson(d) {
       return d.keys().hasOnly(['firstName', 'lastName', 'sex', 'birthDate', 'birthPlace', 'deathDate',
-                               'fatherId', 'motherId', 'spouseIds', 'notes', 'photo', 'updatedBy', 'updatedAt'])
+                               'fatherId', 'motherId', 'spouseIds', 'notes', 'photo', 'deathPlace',
+                               'updatedBy', 'updatedAt'])
         && isText(d.firstName, 100) && d.firstName.size() > 0
         && isText(d.lastName, 100) && d.lastName.size() > 0
         && d.sex in ['M', 'F', 'U']
@@ -37,6 +38,7 @@ service cloud.firestore {
         && d.spouseIds is list && d.spouseIds.size() <= 30
         && isText(d.notes, 5000)
         && (!('photo' in d) || isText(d.photo, 64))
+        && (!('deathPlace' in d) || isText(d.deathPlace, 200))
         // Chaque fiche garde la trace de sa dernière modification.
         && d.updatedBy == request.auth.uid
         && d.updatedAt == request.time;
