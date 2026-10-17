@@ -582,9 +582,37 @@ function openForm(person = null, preset = {}) {
   const notDescendant = others.filter((o) => !person || !isAncestor(p.id, o.id));
   fillSelect(form.fatherId, notDescendant.filter((o) => o.sex !== 'F'), p.fatherId, '— inconnu —');
   fillSelect(form.motherId, notDescendant.filter((o) => o.sex !== 'M'), p.motherId, '— inconnue —');
-  fillSelect(form.spouseIds, others, p.spouseIds);
+  formSpouses = [...p.spouseIds];
+  spouseCandidates = others;
+  renderSpouses();
   dialog.showModal();
 }
+
+// Conjoints : une étiquette par conjoint (✕ pour le retirer) et une liste pour en ajouter.
+let formSpouses = [];
+let spouseCandidates = [];
+
+function renderSpouses() {
+  $('#spouseChips').innerHTML = formSpouses.length
+    ? formSpouses
+        .map(byId)
+        .filter(Boolean)
+        .map((s) => `<button type="button" class="chip removable" data-spouse-remove="${esc(s.id)}" aria-label="Retirer ${esc(fullName(s))}">${esc(fullName(s))} <span aria-hidden="true">✕</span></button>`)
+        .join('')
+    : '<span class="muted small">Aucun</span>';
+  fillSelect($('#spouseAdd'), spouseCandidates.filter((o) => !formSpouses.includes(o.id)), [], '+ Ajouter un conjoint…');
+}
+
+$('#spouseChips').addEventListener('click', (e) => {
+  const id = e.target.closest('[data-spouse-remove]')?.dataset.spouseRemove;
+  if (!id) return;
+  formSpouses = formSpouses.filter((x) => x !== id);
+  renderSpouses();
+});
+$('#spouseAdd').addEventListener('change', (e) => {
+  if (e.target.value) formSpouses.push(e.target.value);
+  renderSpouses();
+});
 
 function formError(msg) {
   const e = $('#formError');
@@ -604,7 +632,7 @@ form.addEventListener('submit', (ev) => {
   const fatherId = form.fatherId.value;
   const motherId = form.motherId.value;
   if (fatherId && fatherId === motherId) return formError('Le père et la mère doivent être différents.');
-  const spouseIds = [...form.spouseIds.selectedOptions].map((o) => o.value);
+  const spouseIds = [...formSpouses];
 
   const data = normalize({
     id,

@@ -113,10 +113,9 @@
         <legend>Parenté</legend>
         <label>Père<select name="fatherId"></select></label>
         <label>Mère<select name="motherId"></select></label>
-        <label>Conjoint(s)
-          <select name="spouseIds" multiple size="4"></select>
-          <small class="muted">Maintenir/appuyer pour en choisir plusieurs.</small>
-        </label>
+        <div class="field-label">Conjoint(s)</div>
+        <div id="spouseChips" class="chips spouse-chips"></div>
+        <select id="spouseAdd" aria-label="Ajouter un conjoint"></select>
       </fieldset>
 
       <label>Notes<textarea name="notes" rows="3"></textarea></label>
