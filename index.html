@@ -46,18 +46,42 @@
     <!-- Fiche d'une personne -->
     <section id="view-person" class="view"></section>
 
-    <!-- Arbre -->
+    <!-- Arbre interactif -->
     <section id="view-tree" class="view">
-      <div class="tree-controls">
-        <label>Personne centrale
-          <select id="treeRoot"></select>
-        </label>
-        <div class="seg">
-          <button class="seg-btn active" data-mode="desc">Descendants</button>
-          <button class="seg-btn" data-mode="anc">Ancêtres</button>
+      <div class="tree-bar">
+        <select id="treeRoot" aria-label="Personne centrale"></select>
+        <button id="toolsBtn" class="btn tools-btn" aria-expanded="false" aria-controls="toolsPanel">⚙︎ Affichage</button>
+      </div>
+      <div id="treeViewport" class="tree-viewport"></div>
+      <p id="treeEmpty" class="empty tree-empty" hidden>Ajoutez des personnes pour voir l’arbre.</p>
+      <p id="treeInfo" class="tree-info"></p>
+      <div class="tree-zoom" role="group" aria-label="Zoom">
+        <button data-zoom="in" aria-label="Zoomer">+</button>
+        <button data-zoom="out" aria-label="Dézoomer">−</button>
+        <button data-zoom="fit" aria-label="Tout voir">⤢</button>
+        <button data-zoom="center" aria-label="Recentrer">◎</button>
+      </div>
+      <p class="tree-hint">Touchez une personne pour la centrer · touchez-la encore pour ouvrir sa fiche</p>
+
+      <div id="toolsPanel" class="tools-panel" hidden>
+        <div class="tools-row">
+          <span class="tools-title">Afficher</span>
+          <div id="modeSeg" class="seg">
+            <button class="seg-btn" data-mode="all">Entourage</button>
+            <button class="seg-btn" data-mode="anc">Ancêtres</button>
+            <button class="seg-btn" data-mode="desc">Descendants</button>
+          </div>
+        </div>
+        <div class="tools-row">
+          <label for="depthRange" class="tools-title">Niveaux <strong id="depthValue"></strong></label>
+          <input type="range" id="depthRange" min="0" max="6" step="1">
+          <small id="depthHelp" class="muted"></small>
+        </div>
+        <div class="tools-row">
+          <span class="tools-title">Informations sur les cartes</span>
+          <div id="fieldToggles" class="toggles"></div>
         </div>
       </div>
-      <div id="tree" class="tree-wrap"></div>
     </section>
   </main>
 
@@ -145,6 +169,7 @@
   <div id="toast" class="toast" hidden></div>
 
   <script src="config.js"></script>
+  <script src="tree.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

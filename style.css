@@ -9,6 +9,10 @@
   --male: #dbe7f5;
   --female: #f7e1e6;
   --unknown: #ecebe6;
+  --male-strong: #5b8fd6;
+  --female-strong: #d9738f;
+  --unknown-strong: #a9a59a;
+  --link: #b9b3a6;
   --danger: #b3261e;
   --radius: 12px;
 }
@@ -24,6 +28,10 @@
     --male: #22303f;
     --female: #3a2830;
     --unknown: #2a2f2d;
+    --male-strong: #6f9fe0;
+    --female-strong: #e58aa3;
+    --unknown-strong: #7d857f;
+    --link: #4a5752;
     --danger: #f2827a;
   }
 }
@@ -134,41 +142,100 @@ legend { padding: 0 6px; font-weight: 600; }
 }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
-/* Arbre */
-.tree-controls { display: grid; gap: 8px; margin-bottom: 12px; }
-.seg { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-.seg-btn { flex: 1; padding: 10px; border: 0; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
-.seg-btn.active { background: var(--accent); color: #fff; }
-.tree-wrap { overflow: auto; padding: 8px 0 24px; -webkit-overflow-scrolling: touch; }
+/* Arbre interactif : occupe tout l'écran sous les onglets */
+body[data-view="tree"] { padding-bottom: 0; overflow: hidden; }
+body[data-view="tree"] main { padding: 0; max-width: none; }
+body[data-view="tree"] .fab { display: none; }
+#view-tree.active {
+  position: fixed; left: 0; right: 0; bottom: 0; top: var(--chrome-h, 104px);
+  display: flex; flex-direction: column; background: var(--bg);
+}
+.tree-bar { display: flex; gap: 8px; padding: 8px 12px; background: var(--card); border-bottom: 1px solid var(--line); z-index: 2; }
+.tree-bar select { margin: 0; flex: 1; min-width: 0; }
+.tools-btn { flex: none; padding: 8px 12px; }
+.tools-btn[aria-expanded="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tree-viewport {
+  position: relative; flex: 1; overflow: hidden; touch-action: none; cursor: grab;
+  background-image: radial-gradient(var(--line) 1px, transparent 1px); background-size: 22px 22px;
+}
+.tree-viewport:active { cursor: grabbing; }
+.tree-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.tree-world.animate { transition: transform .45s cubic-bezier(.2, .8, .2, 1); }
+.tree-links { position: absolute; left: 0; top: 0; overflow: visible; width: 1px; height: 1px; pointer-events: none; }
+.tree-links path { fill: none; stroke: var(--link); stroke-width: 2; stroke-linejoin: round; animation: fade-in .5s .2s both; }
+.tree-links path.spouse { stroke: var(--accent); stroke-width: 2.5; }
+@keyframes fade-in { from { opacity: 0; } }
 
-/* Arbre en CSS pur : listes imbriquées reliées par des traits */
-.tree ul { padding-top: 18px; position: relative; display: flex; justify-content: center; margin: 0; padding-left: 0; }
-.tree li { list-style: none; text-align: center; position: relative; padding: 18px 4px 0; }
-.tree li::before, .tree li::after {
-  content: ""; position: absolute; top: 0; right: 50%; width: 50%; height: 18px;
-  border-top: 2px solid var(--line);
+.tree-card {
+  position: absolute; left: 0; top: 0; width: var(--card-w); height: var(--card-h);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  padding: 8px 8px; border-radius: 14px; border: 1px solid var(--line); border-top: 4px solid var(--unknown-strong);
+  background: var(--card); color: var(--text); font: inherit; text-align: center; cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  transition: transform .45s cubic-bezier(.2, .8, .2, 1), opacity .35s, box-shadow .2s;
 }
-.tree li::after { right: auto; left: 50%; border-left: 2px solid var(--line); }
-.tree li:only-child::before, .tree li:only-child::after { display: none; }
-.tree li:only-child { padding-top: 0; }
-.tree li:first-child::before, .tree li:last-child::after { border: 0 none; }
-.tree li:last-child::before { border-right: 2px solid var(--line); border-radius: 0 6px 0 0; }
-.tree li:first-child::after { border-radius: 6px 0 0 0; }
-.tree ul ul::before {
-  content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: 2px solid var(--line);
+.tree-card.M { border-top-color: var(--male-strong); }
+.tree-card.F { border-top-color: var(--female-strong); }
+.tree-card.focus { box-shadow: 0 0 0 3px var(--accent), 0 8px 22px rgba(0,0,0,.18); z-index: 1; }
+.tree-card.entering, .tree-card.leaving { opacity: 0; }
+.tree-card.leaving { pointer-events: none; }
+.card-photo { width: 48px; height: 48px; margin-bottom: 4px; font-size: .85rem; }
+.card-first, .card-last, .card-line { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-first { font-size: .9rem; line-height: 1.2; }
+.card-last { font-size: .9rem; line-height: 1.2; font-weight: 700; }
+.card-line { font-size: .75rem; line-height: 17px; color: var(--muted); }
+
+.tree-zoom {
+  position: absolute; right: 12px; bottom: calc(16px + env(safe-area-inset-bottom));
+  display: grid; gap: 6px; z-index: 2;
 }
-.tree > ul { padding-top: 0; width: max-content; min-width: 100%; }
-.couple { display: inline-flex; gap: 4px; align-items: center; }
-.node {
-  display: inline-block; min-width: 92px; max-width: 130px; padding: 6px 8px;
-  border-radius: 10px; border: 1px solid var(--line); background: var(--unknown);
-  font-size: .8rem; line-height: 1.25; cursor: pointer; color: var(--text);
+.tree-zoom button {
+  width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--card); color: var(--text); font-size: 1.25rem; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.12);
 }
-.node.M { background: var(--male); }
-.node.F { background: var(--female); }
-.node.focus { outline: 2px solid var(--accent); }
-.node small { display: block; color: var(--muted); }
-.amp { color: var(--muted); font-size: .8rem; }
+.tree-info { position: absolute; left: 12px; top: 64px; margin: 0; font-size: .8rem; color: var(--muted); pointer-events: none; }
+.tree-hint {
+  transition: opacity .4s;
+  position: absolute; left: 12px; right: 68px; bottom: calc(16px + env(safe-area-inset-bottom)); margin: 0;
+  font-size: .8rem; color: var(--muted); pointer-events: none;
+}
+.tree-hint.seen { opacity: 0; }
+.tree-empty { position: absolute; left: 0; right: 0; top: 40%; }
+
+.tools-panel {
+  position: absolute; left: 8px; right: 8px; top: 60px; z-index: 3; max-height: calc(100% - 80px); overflow: auto;
+  background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.2); display: grid; gap: 14px;
+}
+.tools-panel[hidden] { display: none; }
+@media (min-width: 600px) { .tools-panel { right: auto; width: 420px; } }
+.tools-row { display: grid; gap: 6px; }
+.tools-title { font-size: .85rem; color: var(--muted); }
+.tools-title strong { color: var(--text); font-size: 1rem; margin-left: 4px; }
+input[type="range"] { padding: 0; border: 0; background: none; accent-color: var(--accent); margin: 0; }
+input[type="range"]:focus { outline: none; }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.seg-btn { flex: 1; padding: 9px 4px; border: 0; background: var(--card); color: var(--text); font: inherit; font-size: .9rem; cursor: pointer; }
+.seg-btn.active { background: var(--accent); color: #fff; }
+.toggles { display: flex; flex-wrap: wrap; gap: 6px; }
+.toggle { margin: 0; color: var(--text); }
+.toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.toggle span {
+  display: inline-block; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line);
+  font-size: .875rem; cursor: pointer; user-select: none;
+}
+.toggle input:checked + span { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.toggle input:focus-visible + span { outline: 2px solid var(--accent); }
+
+/* Avatars et photos */
+.avatar { position: relative; overflow: hidden; }
+.avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.avatar img:not([src]) { display: none; }
+.avatar.big { width: 96px; height: 96px; font-size: 1.6rem; margin: 0 auto 8px; }
+.person-head { text-align: center; }
+.person-head .facts { text-align: left; }
+.photo-actions { display: flex; gap: 8px; justify-content: center; margin: 4px 0 8px; flex-wrap: wrap; }
+.photo-actions .btn { margin: 0; }
 
 .toast {
   position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%);

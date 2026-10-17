@@ -21,11 +21,21 @@ const SHARED = Boolean(CONFIG.firebase);
 // Mode local : localStorage. Mode partagé : Firestore (voir cloud.js), qui garde aussi
 // une copie locale pour fonctionner hors connexion.
 
+const PHOTO_KEY = 'arbre-familial:photos';
 let people = SHARED ? [] : load();
+let localPhotos = SHARED ? {} : loadJson(PHOTO_KEY, {}); // mode local : { idPhoto: image en data URL }
 let cloud = null; // module cloud.js en mode partagé
 let account = null; // utilisateur connecté (mode partagé)
 let role = SHARED ? null : 'admin'; // en mode local, on a tous les droits
 const canEdit = () => role === 'editor' || role === 'admin';
+
+function loadJson(key, fallback) {
+  try {
+    return JSON.parse(localStorage.getItem(key)) || fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 function load() {
   try {
@@ -41,8 +51,12 @@ function save() {
   if (SHARED) return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: FORMAT_VERSION, people }));
+    // On ne garde que les photos encore utilisées.
+    const used = new Set(people.map((p) => p.photo).filter(Boolean));
+    for (const id of Object.keys(localPhotos)) if (!used.has(id)) delete localPhotos[id];
+    localStorage.setItem(PHOTO_KEY, JSON.stringify(localPhotos));
   } catch {
-    toast('Impossible d’enregistrer (stockage indisponible).');
+    toast('Impossible d’enregistrer : le stockage du téléphone est plein ou indisponible.');
   }
 }
 
@@ -59,6 +73,7 @@ function normalize(p) {
     motherId: p.motherId || '',
     spouseIds: Array.isArray(p.spouseIds) ? [...new Set(p.spouseIds.map(String))] : [],
     notes: String(p.notes || ''),
+    photo: String(p.photo || ''), // identifiant de la photo ('' = pas de photo)
   };
 }
 
@@ -165,6 +180,19 @@ function lifespan(p) {
   return d ? `${b || '?'} – ${d}` : `né${p.sex === 'F' ? 'e' : ''} en ${b}`;
 }
 
+/** Âge actuel, ou âge au décès. « ≈ » quand la date est incomplète. */
+function ageText(p) {
+  if (!p.birthDate) return '';
+  const [by, bm, bd] = p.birthDate.split('-').map(Number);
+  const end = p.deathDate || new Date().toISOString().slice(0, 10);
+  const [ey, em, ed] = end.split('-').map(Number);
+  let age = ey - by;
+  if (bm && em && (em < bm || (em === bm && bd && ed && ed < bd))) age--;
+  const approx = !bm || !em || (!bd && em === bm) ? '≈' : '';
+  if (age < 0 || (!p.deathDate && age > 110)) return '';
+  return p.deathDate ? `décédé${p.sex === 'F' ? 'e' : ''} à ${approx}${age} ans` : `${approx}${age} ans`;
+}
+
 /* ------------------------------ Utilitaires ----------------------------- */
 
 const $ = (sel) => document.querySelector(sel);
@@ -200,11 +228,85 @@ function toast(msg) {
   toastTimer = setTimeout(() => (t.hidden = true), 2800);
 }
 
+/* -------------------------------- Photos -------------------------------- */
+// Chaque photo a un identifiant ; la fiche de la personne ne garde que cet identifiant.
+// Mode local : photos dans localStorage. Mode partagé : collection « photos » de Firestore,
+// chargées seulement quand elles sont affichées.
+
+const photoCache = new Map(); // idPhoto -> Promise<data URL | ''>
+
+function loadPhoto(id) {
+  if (!photoCache.has(id)) {
+    photoCache.set(
+      id,
+      cloud ? cloud.getPhoto(id).catch(() => '') : Promise.resolve(localPhotos[id] || '')
+    );
+  }
+  return photoCache.get(id);
+}
+
+/** Avatar rond : la photo si elle existe, sinon les initiales. */
+function avatarHtml(p, cls = 'avatar') {
+  const img = p.photo ? `<img data-photo="${esc(p.photo)}" alt="">` : '';
+  return `<span class="${cls} ${p.sex}">${img}<span class="initials">${esc(initials(p))}</span></span>`;
+}
+
+/** Remplit les <img data-photo> d'un bloc une fois les photos chargées. */
+function hydratePhotos(root) {
+  for (const img of root.querySelectorAll('img[data-photo]:not([src])')) {
+    loadPhoto(img.dataset.photo).then((url) => {
+      if (url) img.src = url;
+    });
+  }
+}
+
+/** Recadre en carré et réduit la photo (≈ 20 Ko) pour qu'elle reste légère à stocker et à charger. */
+function resizePhoto(file, size = 320) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = size;
+      canvas.getContext('2d').drawImage(
+        img,
+        (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side,
+        0, 0, size, size
+      );
+      URL.revokeObjectURL(img.src);
+      resolve(canvas.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = () => reject(new Error('Image illisible.'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function setPhoto(personId, file) {
+  const p = byId(personId);
+  let url;
+  try {
+    url = await resizePhoto(file);
+  } catch (e) {
+    return toast(e.message);
+  }
+  const photoId = 'ph' + newId().slice(1);
+  photoCache.set(photoId, Promise.resolve(url));
+  if (cloud) cloud.savePhoto(photoId, url, personId).catch((e) => toast(e.message));
+  else localPhotos[photoId] = url;
+  mutate(`Photo de ${fullName(p)}`, () => (p.photo = photoId));
+  toast('Photo enregistrée');
+  route(true);
+}
+
+function removePhoto(personId) {
+  const p = byId(personId);
+  if (!confirm(`Retirer la photo de ${fullName(p)} ?`)) return;
+  mutate(`Photo retirée : ${fullName(p)}`, () => (p.photo = ''));
+  route(true);
+}
+
 /* ------------------------------ Navigation ------------------------------ */
 // L'URL (#/liste, #/arbre, #/personne/<id>) permet au bouton « retour » du téléphone de fonctionner.
-
-let treeMode = 'desc';
-let treeRootId = '';
 
 function route(keepScroll = false) {
   document.body.classList.toggle('can-edit', canEdit());
@@ -225,6 +327,7 @@ function route(keepScroll = false) {
 function showView(name, id, keepScroll) {
   $$('.view').forEach((v) => v.classList.remove('active'));
   $(`#view-${name}`).classList.add('active');
+  document.body.dataset.view = name;
   $$('.tab').forEach((t) =>
     t.classList.toggle('active', t.dataset.view === (name === 'tree' ? 'tree' : 'list'))
   );
@@ -250,7 +353,7 @@ function renderList() {
     .map(
       (p) => `
       <li class="person-item" data-id="${esc(p.id)}">
-        <span class="avatar ${p.sex}">${esc(initials(p))}</span>
+        ${avatarHtml(p)}
         <span>
           <span class="name">${esc(fullName(p))}</span><br>
           <span class="meta">${esc([lifespan(p), p.birthPlace].filter(Boolean).join(' · '))}</span>
@@ -262,6 +365,7 @@ function renderList() {
   $('#count').textContent = people.length
     ? `${list.length} personne${list.length > 1 ? 's' : ''}${q ? ' trouvée' + (list.length > 1 ? 's' : '') : ''}`
     : '';
+  hydratePhotos($('#personList'));
 }
 
 function chips(list) {
@@ -276,13 +380,21 @@ function renderPerson(id) {
   const facts = [
     ['Naissance', [formatDate(p.birthDate), p.birthPlace].filter(Boolean).join(' à ')],
     ['Décès', formatDate(p.deathDate)],
+    ['Âge', ageText(p)],
     ['Sexe', { M: 'Homme', F: 'Femme' }[p.sex] || ''],
   ].filter(([, v]) => v);
 
   $('#view-person').innerHTML = `
     <button class="back" data-back>← Retour</button>
-    <div class="card">
+    <div class="card person-head">
+      ${avatarHtml(p, 'avatar big')}
       <h2>${esc(fullName(p))}</h2>
+      <div class="photo-actions edit-only">
+        <label class="btn small-btn">📷 ${p.photo ? 'Changer la photo' : 'Ajouter une photo'}
+          <input type="file" accept="image/*" data-photo-input="${esc(p.id)}" hidden>
+        </label>
+        ${p.photo ? `<button class="btn small-btn" data-photo-remove="${esc(p.id)}">Retirer</button>` : ''}
+      </div>
       ${facts.length ? `<dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
       ${p.notes ? `<p>${esc(p.notes).replace(/\n/g, '<br>')}</p>` : ''}
     </div>
@@ -296,58 +408,142 @@ function renderPerson(id) {
       <button class="btn" data-show-tree="${esc(p.id)}">Voir dans l’arbre</button>
       <button class="btn danger edit-only" data-delete="${esc(p.id)}">Supprimer</button>
     </div>`;
+  hydratePhotos($('#view-person'));
 }
 
 /* -------------------------------- Arbre --------------------------------- */
 
-function nodeHtml(p) {
-  return `<span class="node ${p.sex}${p.id === treeRootId ? ' focus' : ''}" data-goto="${esc(p.id)}">
-    ${esc(p.firstName)} <strong>${esc(p.lastName)}</strong><small>${esc(lifespan(p))}</small></span>`;
-}
-
-function descendantsHtml(p, seen) {
-  if (seen.has(p.id)) return '';
-  seen.add(p.id);
-  const spouses = spousesOf(p);
-  const couple = [nodeHtml(p), ...spouses.map(nodeHtml)].join('<span class="amp">&amp;</span>');
-  const kids = sortByBirth(childrenOf(p.id));
-  const sub = kids.map((k) => descendantsHtml(k, seen)).filter(Boolean);
-  return `<li><span class="couple">${couple}</span>${sub.length ? `<ul>${sub.join('')}</ul>` : ''}</li>`;
-}
-
-// Ancêtres : la personne en haut, ses parents en dessous, puis les grands-parents, etc.
-function ancestorsHtml(p, seen) {
-  if (seen.has(p.id)) return '';
-  seen.add(p.id);
-  const sub = parentsOf(p).map((a) => ancestorsHtml(a, seen)).filter(Boolean);
-  return `<li>${nodeHtml(p)}${sub.length ? `<ul>${sub.join('')}</ul>` : ''}</li>`;
-}
-
 const sortByBirth = (list) =>
   [...list].sort((a, b) => (a.birthDate || '9999').localeCompare(b.birthDate || '9999'));
 
+// Réglages d'affichage de l'arbre, mémorisés sur ce téléphone.
+const PREFS_KEY = 'arbre-familial:affichage';
+const FIELD_LABELS = { photo: 'Photo', years: 'Années', birth: 'Date de naissance', place: 'Lieu de naissance', age: 'Âge' };
+const prefs = { depth: 2, mode: 'all', fields: ['photo', 'years'], ...loadJson(PREFS_KEY, {}) };
+const savePrefs = () => {
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* préférence non mémorisée */ }
+};
+
+let treeRootId = '';
+let treeView = null;
+
+function treeCardHtml(p, fields) {
+  const lines = [];
+  if (fields.has('years')) lines.push(lifespan(p));
+  if (fields.has('birth')) lines.push(p.birthDate ? `° ${formatDate(p.birthDate)}` : '');
+  if (fields.has('place')) lines.push(p.birthPlace);
+  if (fields.has('age')) lines.push(ageText(p));
+  return `
+    ${fields.has('photo') ? avatarHtml(p, 'avatar card-photo') : ''}
+    <span class="card-first">${esc(p.firstName)}</span>
+    <span class="card-last">${esc(p.lastName)}</span>
+    ${lines.map((l) => `<span class="card-line">${esc(l) || '&nbsp;'}</span>`).join('')}`;
+}
+
+function cardTitle(p) {
+  return [fullName(p), lifespan(p), p.birthPlace].filter(Boolean).join(' · ');
+}
+
+function initTree() {
+  treeView = createTreeView($('#treeViewport'), {
+    people: () => people,
+    depth: () => prefs.depth,
+    mode: () => prefs.mode,
+    fields: () => new Set(prefs.fields),
+    cardHtml: treeCardHtml,
+    title: cardTitle,
+    afterRender: hydratePhotos,
+    onFocus: (id) => {
+      treeRootId = id;
+      $('#treeRoot').value = id;
+      treeView.show(id);
+      updateTreeInfo();
+    },
+    onOpen: (id) => go(`#/personne/${id}`),
+  });
+
+  // Boîte à outils
+  $('#toolsBtn').addEventListener('click', () => {
+    const panel = $('#toolsPanel');
+    panel.hidden = !panel.hidden;
+    $('#toolsBtn').setAttribute('aria-expanded', String(!panel.hidden));
+  });
+  $('#depthRange').addEventListener('input', (e) => {
+    prefs.depth = +e.target.value;
+    savePrefs();
+    renderToolbox();
+    treeView.show(treeRootId, { recenter: false });
+    updateTreeInfo();
+  });
+  $('#modeSeg').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-mode]');
+    if (!b) return;
+    prefs.mode = b.dataset.mode;
+    savePrefs();
+    renderToolbox();
+    treeView.show(treeRootId, { recenter: false });
+    updateTreeInfo();
+  });
+  $('#fieldToggles').addEventListener('change', (e) => {
+    const f = e.target.value;
+    prefs.fields = e.target.checked ? [...new Set([...prefs.fields, f])] : prefs.fields.filter((x) => x !== f);
+    savePrefs();
+    treeView.refresh();
+  });
+  $('.tree-zoom').addEventListener('click', (e) => {
+    const a = e.target.closest('[data-zoom]')?.dataset.zoom;
+    if (a === 'in') treeView.zoom(1.25);
+    if (a === 'out') treeView.zoom(0.8);
+    if (a === 'fit') treeView.fit();
+    if (a === 'center') treeView.center();
+  });
+  $('#treeRoot').addEventListener('change', (e) => treeView.show((treeRootId = e.target.value)));
+  // Toucher l'arbre referme la boîte à outils ; l'aide disparaît après la première utilisation.
+  $('#treeViewport').addEventListener('pointerdown', () => {
+    if (!$('#toolsPanel').hidden) $('#toolsBtn').click();
+    $('.tree-hint').classList.add('seen');
+  });
+  renderToolbox();
+}
+
+const DEPTH_HELP = {
+  all: ['la personne seule', 'conjoints, parents, frères et sœurs, enfants', '+ grands-parents, oncles et tantes, petits-enfants, neveux…'],
+  anc: ['la personne seule', 'ses parents', 'ses grands-parents'],
+  desc: ['la personne et ses conjoints', 'ses enfants', 'ses petits-enfants'],
+};
+
+function renderToolbox() {
+  $('#depthRange').value = prefs.depth;
+  $('#depthValue').textContent = prefs.depth;
+  const help = DEPTH_HELP[prefs.mode];
+  $('#depthHelp').textContent = help[prefs.depth] || `${prefs.depth} générations / liens autour de la personne`;
+  $$('#modeSeg [data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === prefs.mode));
+  $('#fieldToggles').innerHTML = Object.entries(FIELD_LABELS)
+    .map(([k, v]) => `<label class="toggle"><input type="checkbox" value="${k}"${prefs.fields.includes(k) ? ' checked' : ''}><span>${v}</span></label>`)
+    .join('');
+}
+
+function updateTreeInfo() {
+  const n = treeView.count;
+  $('#treeInfo').textContent = n > 1 ? `${n} personnes affichées` : '';
+}
+
 function renderTree() {
-  const sel = $('#treeRoot');
+  if (!treeView) initTree();
   if (!byId(treeRootId)) {
     // Par défaut : la personne la plus ancienne sans parents connus.
     const roots = sortByBirth(people.filter((p) => !parentsOf(p).length));
     treeRootId = (roots[0] || people[0] || {}).id || '';
   }
-  sel.innerHTML = sortPeople(people)
+  $('#treeRoot').innerHTML = sortPeople(people)
     .map((p) => `<option value="${esc(p.id)}"${p.id === treeRootId ? ' selected' : ''}>${esc(fullName(p))}</option>`)
     .join('');
-  $$('.seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === treeMode));
-
-  const root = byId(treeRootId);
-  if (!root) {
-    $('#tree').innerHTML = '<p class="empty">Ajoutez des personnes pour voir l’arbre.</p>';
-    return;
-  }
-  const html = treeMode === 'desc' ? descendantsHtml(root, new Set()) : ancestorsHtml(root, new Set());
-  $('#tree').innerHTML = `<div class="tree"><ul>${html}</ul></div>`;
-  // Centre horizontalement l'arbre s'il dépasse la largeur de l'écran.
-  const wrap = $('#tree');
-  wrap.scrollLeft = (wrap.scrollWidth - wrap.clientWidth) / 2;
+  $('#treeEmpty').hidden = Boolean(treeRootId);
+  // La vue doit être visible pour mesurer l'écran : on attend l'affichage.
+  requestAnimationFrame(() => {
+    treeView.show(treeRootId, { recenter: treeView.focusId !== treeRootId });
+    updateTreeInfo();
+  });
 }
 
 /* ----------------------------- Formulaire ------------------------------- */
@@ -476,8 +672,14 @@ function download(filename, text, type) {
   const file = new File([blob], filename, { type });
   // Sur téléphone : ouvre le menu de partage (WhatsApp, e-mail…) si possible.
   if (navigator.canShare?.({ files: [file] })) {
-    return navigator.share({ files: [file], title: 'Arbre familial' }).catch(() => {});
+    // Si le partage est refusé (ex. trop de temps depuis l'appui), on télécharge le fichier.
+    return navigator.share({ files: [file], title: 'Arbre familial' })
+      .catch((e) => e.name !== 'AbortError' && saveFile(blob, filename));
   }
+  saveFile(blob, filename);
+}
+
+function saveFile(blob, filename) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = filename;
@@ -487,8 +689,14 @@ function download(filename, text, type) {
 
 const stamp = () => new Date().toISOString().slice(0, 10);
 
-function exportJson() {
-  const json = JSON.stringify({ app: 'arbre-familial', version: FORMAT_VERSION, exported: new Date().toISOString(), people }, null, 2);
+async function exportJson() {
+  // Les photos sont incluses pour que le fichier soit une sauvegarde complète.
+  const photos = {};
+  for (const id of new Set(people.map((p) => p.photo).filter(Boolean))) {
+    const url = await loadPhoto(id);
+    if (url) photos[id] = url;
+  }
+  const json = JSON.stringify({ app: 'arbre-familial', version: FORMAT_VERSION, exported: new Date().toISOString(), people, photos }, null, 2);
   download(`arbre-familial-${stamp()}.json`, json, 'application/json');
 }
 
@@ -559,6 +767,13 @@ function importJson(file) {
       const data = JSON.parse(reader.result);
       const incoming = (Array.isArray(data) ? data : data.people || []).map(normalize);
       if (!incoming.length) throw new Error('vide');
+      for (const [id, url] of Object.entries(data.photos || {})) {
+        if (typeof url !== 'string' || !url.startsWith('data:image/')) continue;
+        photoCache.set(id, Promise.resolve(url));
+        // Mode partagé : une photo déjà présente ne peut pas être remplacée (refus attendu, ignoré).
+        if (cloud) cloud.savePhoto(id, url, '').catch(() => {});
+        else localPhotos[id] = url;
+      }
       // Fusion : les fiches de même identifiant sont mises à jour, les autres ajoutées.
       let added = 0;
       let updated = 0;
@@ -607,8 +822,6 @@ $('#search').addEventListener('input', renderList);
 $$('.tab').forEach((t) =>
   t.addEventListener('click', () => go(t.dataset.view === 'tree' ? '#/arbre' : '#/liste'))
 );
-$('#treeRoot').addEventListener('change', (e) => { treeRootId = e.target.value; renderTree(); });
-$$('.seg-btn').forEach((b) => b.addEventListener('click', () => { treeMode = b.dataset.mode; renderTree(); }));
 
 // Délégation : un seul écouteur pour tous les boutons générés dynamiquement.
 document.addEventListener('click', (e) => {
@@ -882,6 +1095,23 @@ document.addEventListener('click', (e) => {
   const undoId = e.target.closest('[data-undo]')?.dataset.undo;
   if (undoId) undo(undoId);
 });
+
+document.addEventListener('change', (e) => {
+  const id = e.target.dataset?.photoInput;
+  if (id && e.target.files[0]) setPhoto(id, e.target.files[0]);
+});
+document.addEventListener('click', (e) => {
+  const id = e.target.closest('[data-photo-remove]')?.dataset.photoRemove;
+  if (id) removePhoto(id);
+});
+
+// Hauteur de l'en-tête + onglets : la vue arbre occupe tout l'espace en dessous.
+function measureChrome() {
+  const h = $('.topbar').offsetHeight + $('.tabs').offsetHeight;
+  document.documentElement.style.setProperty('--chrome-h', `${h}px`);
+}
+measureChrome();
+window.addEventListener('resize', measureChrome);
 
 window.addEventListener('hashchange', () => route());
 if (SHARED) startShared();

@@ -28,7 +28,7 @@ service cloud.firestore {
     function isText(v, max) { return v is string && v.size() <= max; }
     function validPerson(d) {
       return d.keys().hasOnly(['firstName', 'lastName', 'sex', 'birthDate', 'birthPlace', 'deathDate',
-                               'fatherId', 'motherId', 'spouseIds', 'notes', 'updatedBy', 'updatedAt'])
+                               'fatherId', 'motherId', 'spouseIds', 'notes', 'photo', 'updatedBy', 'updatedAt'])
         && isText(d.firstName, 100) && d.firstName.size() > 0
         && isText(d.lastName, 100) && d.lastName.size() > 0
         && d.sex in ['M', 'F', 'U']
@@ -36,6 +36,7 @@ service cloud.firestore {
         && isText(d.fatherId, 64) && isText(d.motherId, 64)
         && d.spouseIds is list && d.spouseIds.size() <= 30
         && isText(d.notes, 5000)
+        && (!('photo' in d) || isText(d.photo, 64))
         // Chaque fiche garde la trace de sa dernière modification.
         && d.updatedBy == request.auth.uid
         && d.updatedAt == request.time;
@@ -61,6 +62,21 @@ service cloud.firestore {
         && request.resource.data.byEmail == request.auth.token.email
         && request.resource.data.at == request.time;
       allow update, delete: if false;
+    }
+
+    // Photos : jamais modifiées (une nouvelle photo = un nouveau document), petites images uniquement.
+    match /photos/{photoId} {
+      allow read: if isMember();
+      allow create: if canEdit()
+        && request.resource.data.keys().hasOnly(['data', 'personId', 'by', 'at'])
+        && request.resource.data.data is string
+        && request.resource.data.data.size() < 300000
+        && request.resource.data.data.matches('data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+')
+        && isText(request.resource.data.personId, 64)
+        && request.resource.data.by == request.auth.uid
+        && request.resource.data.at == request.time;
+      allow update: if false;
+      allow delete: if isAdmin();
     }
 
     match /members/{email} {

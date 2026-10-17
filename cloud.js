@@ -11,7 +11,7 @@ const {
 } = await import(`${SDK}/firebase-auth.js`);
 const {
   initializeFirestore, connectFirestoreEmulator, persistentLocalCache, persistentMultipleTabManager,
-  collection, doc, onSnapshot, writeBatch, setDoc, deleteDoc, serverTimestamp, query, orderBy, limit,
+  collection, doc, onSnapshot, writeBatch, setDoc, getDoc, deleteDoc, serverTimestamp, query, orderBy, limit,
 } = await import(`${SDK}/firebase-firestore.js`);
 
 const EMAIL_KEY = 'arbre-familial:email-connexion';
@@ -167,6 +167,23 @@ export async function commit(changes, label) {
     if (i === parts - 1) return done;
     done.catch(() => {});
   }
+}
+
+/* -------------------------------- Photos -------------------------------- */
+// Une photo n'est jamais modifiée : changer de photo en crée une nouvelle. Ainsi l'historique
+// (et l'annulation) de la fiche, qui ne garde que l'identifiant, retrouve toujours la bonne image.
+
+export async function savePhoto(id, data, personId) {
+  try {
+    await setDoc(doc(db, 'photos', id), { data, personId, by: user.uid, at: serverTimestamp() });
+  } catch (e) {
+    throw new Error(dbMessage(e));
+  }
+}
+
+export async function getPhoto(id) {
+  const snap = await getDoc(doc(db, 'photos', id));
+  return snap.exists() ? snap.data().data : '';
 }
 
 /* ------------------------- Historique et membres ------------------------ */

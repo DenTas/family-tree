@@ -22,7 +22,18 @@ Le mode est choisi dans `config.js` : `firebase: null` = local ; une configurati
 - Dates partielles acceptées : `24/05/1952`, `05/1952` ou `1952` (les dates impossibles comme 31/02 sont refusées).
 - Parenté : père, mère, conjoint(s). Enfants et frères/sœurs sont **déduits automatiquement**.
   Les liens impossibles (être son propre ancêtre) sont bloqués.
-- Liste avec recherche (insensible aux accents), arbre des **descendants** ou des **ancêtres**.
+- Liste avec recherche (insensible aux accents).
+- **Arbre interactif** : on le déplace au doigt, on zoome à deux doigts (ou avec les boutons + / − / ⤢).
+  Toucher une personne la **centre** (animation) ; la toucher à nouveau ouvre sa fiche.
+- **Boîte à outils** (bouton « Affichage ») :
+  - *Entourage*, *Ancêtres* ou *Descendants* ;
+  - curseur **Niveaux** : 0 = la personne seule ; 1 = conjoints, parents, frères et sœurs, enfants ;
+    2 = on ajoute les personnes à deux liens (grands-parents, oncles et tantes, neveux, petits-enfants, beaux-parents…), etc.
+    En mode Ancêtres / Descendants, le niveau compte les générations ;
+  - informations affichées sur les cartes : photo, années, date et lieu de naissance, âge.
+  Ces réglages sont mémorisés sur chaque téléphone.
+- **Photos** : sur la fiche d'une personne, « Ajouter une photo » (galerie ou appareil photo).
+  La photo est recadrée en carré et réduite (≈ 20–40 Ko) pour rester légère.
 - Export **JSON** et **GEDCOM 5.5.1** (format standard des logiciels de généalogie), import JSON avec fusion.
 - Fonctionne hors connexion et s'installe sur l'écran d'accueil (« Ajouter à l'écran d'accueil »).
 
@@ -115,7 +126,8 @@ npm test
 | `style.css` | Mise en page mobile, mode sombre, arbre en CSS pur |
 | `app.js` | Données, parenté, rendu, export/import, GEDCOM, écrans du mode partagé |
 | `config.js` | Choix du mode (local ou partagé) et configuration Firebase |
-| `cloud.js` | Mode partagé : connexion, synchronisation, historique, membres |
+| `tree.js` | Arbre interactif : calcul de l'entourage, placement des cartes, déplacement et zoom |
+| `cloud.js` | Mode partagé : connexion, synchronisation, historique, membres, photos |
 | `firestore.rules` | Règles de sécurité de la base (droits, historique non modifiable) |
 | `tests/` | Tests des règles sur l'émulateur Firebase |
 | `manifest.webmanifest`, `icon.svg` | Installation sur l'écran d'accueil |
