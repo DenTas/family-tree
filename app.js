@@ -69,7 +69,9 @@ function normalize(p) {
     sex: ['M', 'F'].includes(p.sex) ? p.sex : 'U',
     birthDate: p.birthDate || '',
     birthPlace: String(p.birthPlace || '').trim(),
-    birthCountry: /^[A-Z]{2}$/.test(p.birthCountry || '') ? p.birthCountry : '', // code pays ISO (BE, FR…)
+    // Nationalité (code pays ISO : BE, FR…). Le nom technique « birthCountry » est conservé
+    // pour ne pas toucher aux données ni aux règles Firestore déjà en place.
+    birthCountry: /^[A-Z]{2}$/.test(p.birthCountry || '') ? p.birthCountry : '',
     deathPlace: String(p.deathPlace || '').trim(),
     deceased: p.deceased === true, // décédé·e même sans date ni lieu connus
     deathDate: p.deathDate || '',
@@ -211,7 +213,6 @@ let regionNames = null;
 try { regionNames = new Intl.DisplayNames(['fr'], { type: 'region' }); } catch { /* navigateur ancien */ }
 const countryName = (code) => (code && regionNames?.of(code)) || code || '';
 const flag = (code) => (code ? String.fromCodePoint(...[...code].map((c) => 0x1f1a5 + c.charCodeAt(0))) : '');
-const placeText = (place, code) => [place, code && `${flag(code)} ${countryName(code)}`].filter(Boolean).join(', ');
 
 /* ------------------------------ Utilitaires ----------------------------- */
 
@@ -378,7 +379,7 @@ function renderList() {
         ${avatarHtml(p)}
         <span>
           <span class="name">${esc(fullName(p))}${deathMark(p)}</span><br>
-          <span class="meta">${esc([lifespan(p), [flag(p.birthCountry), p.birthPlace].filter(Boolean).join(' ')].filter(Boolean).join(' · '))}</span>
+          <span class="meta">${esc([lifespan(p), p.birthPlace, flag(p.birthCountry)].filter(Boolean).join(' · '))}</span>
         </span>
       </li>`
     )
@@ -400,7 +401,8 @@ function chips(list) {
 function renderPerson(id) {
   const p = byId(id);
   const facts = [
-    ['Naissance', [formatDate(p.birthDate), placeText(p.birthPlace, p.birthCountry)].filter(Boolean).join(' à ')],
+    ['Naissance', [formatDate(p.birthDate), p.birthPlace].filter(Boolean).join(' à ')],
+    ['Nationalité', p.birthCountry ? `${flag(p.birthCountry)} ${countryName(p.birthCountry)}` : ''],
     ['Décès', [formatDate(p.deathDate), p.deathPlace].filter(Boolean).join(' à ') || (p.deceased ? 'date inconnue' : '')],
     ['Âge', ageText(p)],
     ['Sexe', { M: 'Homme', F: 'Femme' }[p.sex] || ''],
@@ -440,7 +442,7 @@ const sortByBirth = (list) =>
 
 // Réglages d'affichage de l'arbre, mémorisés sur ce téléphone.
 const PREFS_KEY = 'arbre-familial:affichage';
-const FIELD_LABELS = { photo: 'Photo', flag: 'Drapeau du pays de naissance', years: 'Années', birth: 'Date de naissance', place: 'Lieu de naissance', deathPlace: 'Lieu de décès', age: 'Âge' };
+const FIELD_LABELS = { photo: 'Photo', flag: 'Drapeau de la nationalité', years: 'Années', birth: 'Date de naissance', place: 'Lieu de naissance', deathPlace: 'Lieu de décès', age: 'Âge' };
 const prefs = { depth: 2, mode: 'all', fields: ['photo', 'flag', 'years'], ...loadJson(PREFS_KEY, {}) };
 // Réglages enregistrés avant l'ajout du drapeau : on l'active une fois.
 if (!prefs.v) { prefs.v = 2; if (!prefs.fields.includes('flag')) prefs.fields.push('flag'); }
@@ -459,7 +461,7 @@ function treeCardHtml(p, fields) {
   if (fields.has('deathPlace')) lines.push(p.deathPlace ? `† ${p.deathPlace}` : '');
   if (fields.has('age')) lines.push(ageText(p));
   return `
-    ${fields.has('flag') && p.birthCountry ? `<span class="card-flag" title="${esc(countryName(p.birthCountry))}">${flag(p.birthCountry)}</span>` : ''}
+    ${fields.has('flag') && p.birthCountry ? `<span class="card-flag" title="Nationalité : ${esc(countryName(p.birthCountry))}">${flag(p.birthCountry)}</span>` : ''}
     ${fields.has('photo') ? avatarHtml(p, 'avatar card-photo') : ''}
     <span class="card-first">${esc(p.firstName)}</span>
     <span class="card-last">${esc(p.lastName)}${deathMark(p)}</span>
@@ -583,7 +585,7 @@ function fillCountries(selected) {
   const byName = (a, b) => countryName(a).localeCompare(countryName(b), 'fr');
   const used = [...new Set(people.map((p) => p.birthCountry).filter(Boolean))].sort(byName);
   form.birthCountry.innerHTML =
-    '<option value="">— pays —</option>' +
+    '<option value="">— nationalité —</option>' +
     (used.length ? `<optgroup label="Déjà dans l’arbre">${used.map(opt).join('')}</optgroup>` : '') +
     `<optgroup label="Tous les pays">${[...COUNTRY_CODES].sort(byName).map(opt).join('')}</optgroup>`;
 }
@@ -820,10 +822,11 @@ function toGedcom() {
     out.push(`0 ${indi.get(p.id)} INDI`, `1 NAME ${given} /${clean(p.lastName)}/`);
     out.push(`2 GIVN ${given}`, `2 SURN ${clean(p.lastName)}`);
     if (p.sex !== 'U') out.push(`1 SEX ${p.sex}`);
-    if (p.birthDate || p.birthPlace || p.birthCountry) {
+    if (p.birthCountry) out.push(`1 NATI ${clean(countryName(p.birthCountry))}`);
+    if (p.birthDate || p.birthPlace) {
       out.push('1 BIRT');
       if (p.birthDate) out.push(`2 DATE ${gedDate(p.birthDate)}`);
-      if (p.birthPlace || p.birthCountry) out.push(`2 PLAC ${clean([p.birthPlace, countryName(p.birthCountry)].filter(Boolean).join(', '))}`);
+      if (p.birthPlace) out.push(`2 PLAC ${clean(p.birthPlace)}`);
     }
     if (p.deceased && !p.deathDate && !p.deathPlace) out.push('1 DEAT Y'); // décès sans date ni lieu
     if (p.deathDate || p.deathPlace) {
