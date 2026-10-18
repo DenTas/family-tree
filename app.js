@@ -693,6 +693,8 @@ form.addEventListener('submit', (ev) => {
     motherId,
     spouseIds,
     notes: form.notes.value,
+    // La photo se gère depuis la fiche, pas dans ce formulaire : on garde celle qui existe.
+    photo: byId(id)?.photo || '',
   });
   if (!data.firstName || !data.lastName) return formError('Le prénom et le nom sont obligatoires.');
 
