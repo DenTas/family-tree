@@ -55,6 +55,9 @@ export async function start(config, on) {
         (snap) => {
           const role = snap.exists() ? snap.data().role : null;
           on.role(role);
+          // Pas encore membre (réponse du serveur, pas du cache) : on laisse une demande d'accès
+          // que l'administrateur verra dans « Membres et droits d'accès ».
+          if (!role && !snap.metadata.fromCache) requestAccess(u);
           if (role && unsubs.length === 1) {
             unsubs.push(
               onSnapshot(
@@ -203,6 +206,26 @@ export function watchHistory(cb, onError) {
   );
 }
 
+/* --------------------------- Demandes d'accès --------------------------- */
+
+function requestAccess(u) {
+  setDoc(doc(db, 'requests', u.email.toLowerCase()), {
+    name: u.displayName || '',
+    uid: u.uid,
+    at: serverTimestamp(),
+  }).catch(() => {}); // règles pas encore à jour : sans gravité, l'admin peut ajouter l'adresse à la main
+}
+
+export function watchRequests(cb, onError) {
+  return onSnapshot(
+    collection(db, 'requests'),
+    (s) => cb(s.docs.map((d) => ({ email: d.id, ...d.data(), at: d.data().at?.toDate() || new Date() }))),
+    (e) => onError(dbMessage(e))
+  );
+}
+
+export const removeRequest = (email) => deleteDoc(doc(db, 'requests', email)).catch(() => {});
+
 export function watchMembers(cb, onError) {
   return onSnapshot(
     collection(db, 'members'),
@@ -213,7 +236,9 @@ export function watchMembers(cb, onError) {
 
 export async function setMember(email, role) {
   try {
-    await setDoc(doc(db, 'members', email.trim().toLowerCase()), { role, addedBy: user.email });
+    const id = email.trim().toLowerCase();
+    await setDoc(doc(db, 'members', id), { role, addedBy: user.email });
+    removeRequest(id); // la demande éventuelle est traitée
   } catch (e) {
     throw new Error(dbMessage(e));
   }

@@ -14,7 +14,7 @@
 <body>
   <header class="topbar">
     <h1 id="title">Arbre familial</h1>
-    <button id="menuBtn" class="icon-btn" aria-label="Menu">⋮</button>
+    <button id="menuBtn" class="icon-btn" aria-label="Menu">⋮<span id="menuDot" class="dot" hidden></span></button>
   </header>
 
   <nav class="tabs" role="tablist">
@@ -91,6 +91,7 @@
   <dialog id="personDialog">
     <form id="personForm" method="dialog">
       <h2 id="formTitle">Nouvelle personne</h2>
+      <button type="button" class="btn contact-btn" id="formContactBtn" hidden>📇 Remplir depuis mes contacts</button>
       <input type="hidden" name="personId">
       <label>Prénom *<input name="firstName" required autocomplete="off"></label>
       <label>Autres prénoms<input name="middleNames" placeholder="ex. Pierre Daniel" autocomplete="off"></label>
@@ -138,7 +139,7 @@
     <p class="muted small local-only">Les données restent sur ce téléphone. Pour les partager, exportez un fichier et envoyez-le à la famille, qui l’importera.</p>
     <div class="menu-list">
       <button class="btn shared-only" id="historyBtn">🕘 Historique des modifications</button>
-      <button class="btn shared-only admin-only" id="membersBtn">👥 Membres et droits d’accès</button>
+      <button class="btn shared-only admin-only" id="membersBtn">👥 Membres et droits d’accès <span id="requestsCount" class="badge" hidden></span></button>
       <button class="btn" id="exportJsonBtn">📤 Exporter / partager (JSON)</button>
       <button class="btn" id="exportGedBtn">📄 Exporter au format GEDCOM</button>
       <label class="btn file-btn edit-only">📥 Importer un fichier JSON
@@ -155,9 +156,16 @@
   <dialog id="membersDialog">
     <h2>Membres et droits d’accès</h2>
     <p class="muted small">Ajoutez l’adresse e-mail de chaque membre de la famille (celle de son compte Google, ou celle où il recevra son lien de connexion).</p>
+    <div id="requestsBox" class="requests" hidden>
+      <h3>🔔 Demandes d’accès</h3>
+      <p class="muted small">Ces personnes se sont connectées et attendent votre accord.</p>
+      <ul id="requestsList" class="members-list"></ul>
+    </div>
+    <h3 class="members-title">Membres</h3>
     <ul id="membersList" class="members-list"></ul>
     <form id="addMemberForm" class="add-member">
       <input type="email" name="email" placeholder="adresse@exemple.fr" required autocomplete="off">
+      <button type="button" class="btn contact-btn" id="memberContactBtn" hidden>📇 Choisir dans mes contacts</button>
       <select name="role">
         <option value="viewer">Lecture seule</option>
         <option value="editor">Peut modifier</option>

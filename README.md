@@ -40,7 +40,11 @@ Le mode est choisi dans `config.js` : `firebase: null` = local ; une configurati
 Mode partagé en plus :
 - **Droits** : chaque membre est ajouté par son adresse e-mail. Par défaut on le met en *Lecture seule* ;
   l'administrateur peut passer quelqu'un en *Peut modifier* (menu ⋮ → Membres et droits d'accès).
-  Une personne connectée mais pas encore ajoutée voit « Accès en attente », et l'arbre s'ouvre tout seul dès qu'elle est ajoutée.
+  Une personne connectée mais pas encore ajoutée voit « Accès en attente » et laisse automatiquement une
+  **demande d'accès** : l'administrateur voit un point rouge sur le menu ⋮ et accepte la demande en un geste
+  (« Lecture seule » ou « Peut modifier »). L'arbre s'ouvre alors tout seul chez la personne.
+- **Carnet d'adresses** (Chrome sur Android uniquement) : « 📇 Choisir dans mes contacts » préremplit l'adresse
+  d'un membre ou le nom d'une nouvelle personne. Seul le contact choisi est lu.
 - **Historique** (menu ⋮ → Historique) : chaque action (ajout, modification, suppression, import) est
   enregistrée avec son auteur, sa date et l'état avant/après. « Annuler cette modification » remet les fiches dans leur état d'avant
   (et devient elle-même une ligne de l'historique). L'historique ne peut être ni modifié ni effacé depuis l'application.

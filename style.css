@@ -37,6 +37,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; }
 body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -143,6 +144,16 @@ legend { padding: 0 6px; font-weight: 600; }
 .dagger { font-weight: 700; color: var(--text); margin-left: 3px; }
 label.check { display: flex; align-items: center; gap: 8px; color: var(--text); }
 label.check input { width: auto; margin: 0; }
+.dot { position: absolute; top: 8px; right: 8px; width: 10px; height: 10px; border-radius: 50%; background: #e5484d; }
+#menuBtn { position: relative; }
+.badge { display: inline-block; min-width: 20px; padding: 1px 6px; border-radius: 999px; background: #e5484d; color: #fff; font-size: .8rem; margin-left: 6px; }
+.requests { border: 1px solid var(--accent); background: var(--accent-soft); border-radius: 12px; padding: 10px 12px; margin-bottom: 14px; }
+.requests h3, .members-title { margin: 0 0 6px; font-size: 1rem; }
+.request { display: grid; gap: 6px; }
+.request-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.request-actions .btn { margin: 0; }
+.contact-btn { width: 100%; margin-bottom: 12px; }
+.add-member .contact-btn { grid-column: 1 / -1; margin: 0; }
 .field-label { font-size: .9rem; color: var(--muted); margin-bottom: 6px; }
 .spouse-chips { margin-bottom: 8px; }
 .chip.removable span { margin-left: 4px; color: var(--muted); }

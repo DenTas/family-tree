@@ -83,6 +83,17 @@ await t('photo de 250 Ko acceptée', assertSucceeds(setDoc(doc(editor, 'photos/p
 await t('photo trop lourde refusée', assertFails(setDoc(doc(editor, 'photos/ph5'), photo('ue', 'data:image/jpeg;base64,' + 'A'.repeat(310000)))));
 await t('éditeur ne supprime pas une photo', assertFails(deleteDoc(doc(editor, 'photos/ph1'))));
 await t('admin supprime une photo', assertSucceeds(deleteDoc(doc(admin, 'photos/ph1'))));
+const reqData = (uid, name = 'Inconnu') => ({ name, uid, at: serverTimestamp() });
+await t('non-membre crée sa demande d’accès', assertSucceeds(setDoc(doc(stranger, 'requests/stranger@x.fr'), reqData('us'))));
+await t('non-membre renouvelle sa demande', assertSucceeds(setDoc(doc(stranger, 'requests/stranger@x.fr'), reqData('us', 'Nouveau nom'))));
+await t('demande au nom d’un autre refusée', assertFails(setDoc(doc(stranger, 'requests/autre@x.fr'), reqData('us'))));
+await t('demande avec un autre uid refusée', assertFails(setDoc(doc(stranger, 'requests/stranger@x.fr'), reqData('autre'))));
+await t('demande avec champ en trop refusée', assertFails(setDoc(doc(stranger, 'requests/stranger@x.fr'), { ...reqData('us'), role: 'admin' })));
+await t('e-mail non vérifié : demande refusée', assertFails(setDoc(doc(unverified, 'requests/editor@x.fr'), reqData('uu'))));
+await t('non-membre ne lit pas les demandes', assertFails(getDoc(doc(stranger, 'requests/stranger@x.fr'))));
+await t('éditeur ne lit pas les demandes', assertFails(getDocs(collection(editor, 'requests'))));
+await t('admin lit les demandes', assertSucceeds(getDocs(collection(admin, 'requests'))));
+await t('admin supprime une demande', assertSucceeds(deleteDoc(doc(admin, 'requests/stranger@x.fr'))));
 console.log(`\n${ok} réussis, ${ko} échoués`);
 await env.cleanup();
 process.exit(ko ? 1 : 0);

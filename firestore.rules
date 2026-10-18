@@ -83,6 +83,18 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Demandes d'accès : une personne connectée mais pas encore membre laisse sa propre demande ;
+    // seul l'administrateur les voit et les supprime (en accordant ou en refusant l'accès).
+    match /requests/{email} {
+      allow read, delete: if isAdmin();
+      allow create, update: if signedIn()
+        && email == request.auth.token.email.lower()
+        && request.resource.data.keys().hasOnly(['name', 'uid', 'at'])
+        && isText(request.resource.data.name, 200)
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.at == request.time;
+    }
+
     match /members/{email} {
       // Chacun peut lire sa propre fiche (pour connaître son rôle) ; l'administrateur voit tout.
       allow read: if isAdmin() || (signedIn() && email == request.auth.token.email.lower());

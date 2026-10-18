@@ -580,6 +580,7 @@ function openForm(person = null, preset = {}) {
   form.reset();
   $('#formError').hidden = true;
   $('#formTitle').textContent = person ? 'Modifier' : 'Nouvelle personne';
+  $('#formContactBtn').hidden = !canPickContacts || Boolean(person);
   form.personId.value = person ? p.id : '';
   form.firstName.value = p.firstName;
   form.middleNames.value = p.middleNames;
@@ -940,7 +941,7 @@ function renderLogin() {
       <div class="card">
         <h2>Accès en attente</h2>
         <p>Vous êtes connecté·e avec <strong>${esc(account.email)}</strong>, mais cette adresse n’a pas encore accès à l’arbre.</p>
-        <p class="muted">Demandez à l’administrateur de la famille d’ajouter cette adresse. La page s’ouvrira automatiquement dès que ce sera fait.</p>
+        <p class="muted">Une demande d’accès a été envoyée à l’administrateur de la famille. La page s’ouvrira automatiquement dès qu’il l’aura acceptée.</p>
         <button class="btn" data-signout>Changer de compte</button>
       </div>`;
     return;
@@ -1011,6 +1012,7 @@ async function startShared() {
     role(r) {
       role = ROLE_LABELS[r] ? r : null;
       authState = role ? 'ok' : 'no-access';
+      watchRequestsIfAdmin();
       renderAccount();
       route(true);
     },
@@ -1093,15 +1095,71 @@ function undo(entryId) {
 /* ----------------------- Mode partagé : membres ------------------------- */
 
 let membersUnsub = null;
+let memberEmails = new Set();
+let requests = [];
+let requestsUnsub = null;
+
+// L'administrateur suit les demandes d'accès en permanence : un point s'affiche sur le menu ⋮.
+function watchRequestsIfAdmin() {
+  if (role === 'admin' && !requestsUnsub) {
+    requestsUnsub = cloud.watchRequests((list) => { requests = list; renderRequests(); }, () => {});
+    membersUnsub = cloud.watchMembers(renderMembers, (msg) => toast(msg));
+  } else if (role !== 'admin' && requestsUnsub) {
+    requestsUnsub();
+    membersUnsub();
+    requestsUnsub = membersUnsub = null;
+    requests = [];
+    renderRequests();
+  }
+}
+
+function renderRequests() {
+  // Une demande d'une personne déjà membre est périmée : on la supprime.
+  const stale = requests.filter((r) => memberEmails.has(r.email));
+  stale.forEach((r) => cloud.removeRequest(r.email));
+  const pending = requests.filter((r) => !memberEmails.has(r.email)).sort((a, b) => b.at - a.at);
+  $('#menuDot').hidden = !pending.length;
+  $('#requestsCount').hidden = !pending.length;
+  $('#requestsCount').textContent = pending.length;
+  $('#requestsBox').hidden = !pending.length;
+  $('#requestsList').innerHTML = pending
+    .map(
+      (r) => `
+      <li class="request">
+        <span class="member-email">${r.name ? `<strong>${esc(r.name)}</strong><br>` : ''}${esc(r.email)}</span>
+        <span class="request-actions">
+          <button class="btn small-btn" data-grant="viewer" data-email="${esc(r.email)}">Lecture seule</button>
+          <button class="btn small-btn primary" data-grant="editor" data-email="${esc(r.email)}">Peut modifier</button>
+          <button class="icon-btn small" data-refuse="${esc(r.email)}" aria-label="Refuser">✕</button>
+        </span>
+      </li>`
+    )
+    .join('');
+}
+
+$('#requestsList').addEventListener('click', (e) => {
+  const grant = e.target.closest('[data-grant]');
+  if (grant) {
+    const { email } = grant.dataset;
+    cloud.setMember(email, grant.dataset.grant).then(
+      () => toast(`Accès accordé à ${email}`),
+      (err) => toast(err.message)
+    );
+  }
+  const refuse = e.target.closest('[data-refuse]')?.dataset.refuse;
+  if (refuse && confirm(`Refuser la demande de ${refuse} ?\n(Si cette personne se reconnecte, une nouvelle demande apparaîtra.)`)) {
+    cloud.removeRequest(refuse);
+  }
+});
 
 function openMembers() {
   $('#menuDialog').close();
   $('#membersDialog').showModal();
-  $('#membersList').innerHTML = '<li class="muted">Chargement…</li>';
-  membersUnsub = cloud.watchMembers(renderMembers, (msg) => toast(msg));
 }
 
 function renderMembers(list) {
+  memberEmails = new Set(list.map((m) => m.email));
+  renderRequests();
   const mine = account.email.toLowerCase();
   $('#membersList').innerHTML = list
     .sort((a, b) => a.email.localeCompare(b.email))
@@ -1118,11 +1176,39 @@ function renderMembers(list) {
     .join('');
 }
 
-$('#membersDialog').addEventListener('close', () => {
-  if (membersUnsub) membersUnsub();
-  membersUnsub = null;
-});
 $('#closeMembersBtn').addEventListener('click', () => $('#membersDialog').close());
+
+/* --------------------- Carnet d'adresses du téléphone --------------------- */
+// API « Contact Picker » : Chrome sur Android uniquement. Ailleurs, les boutons restent cachés.
+// Seul le contact choisi est transmis à la page ; rien n'est envoyé ailleurs.
+const canPickContacts = 'contacts' in navigator && 'ContactsManager' in window;
+
+async function pickContact(props) {
+  try {
+    const [c] = await navigator.contacts.select(props, { multiple: false });
+    return c || null;
+  } catch {
+    return null;
+  }
+}
+
+$('#memberContactBtn').hidden = !canPickContacts;
+$('#memberContactBtn').addEventListener('click', async () => {
+  const c = await pickContact(['email', 'name']);
+  if (!c) return;
+  if (c.email?.[0]) $('#addMemberForm').email.value = c.email[0];
+  else toast(`${c.name?.[0] || 'Ce contact'} n’a pas d’adresse e-mail.`);
+});
+
+$('#formContactBtn').addEventListener('click', async () => {
+  const c = await pickContact(['name']);
+  const name = c?.name?.[0]?.trim();
+  if (!name) return;
+  // « Prénom Nom » : le premier mot est le prénom, le reste le nom (à corriger si besoin).
+  const [first, ...rest] = name.split(/\s+/);
+  form.firstName.value = first;
+  if (rest.length) form.lastName.value = rest.join(' ');
+});
 $('#addMemberForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const input = e.target.email;
