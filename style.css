@@ -91,7 +91,7 @@ label input, label select, label textarea { color: var(--text); }
   cursor: pointer;
 }
 .avatar {
-  flex: none; width: 42px; height: 42px; border-radius: 50%;
+  flex: none; width: 42px; height: 42px; border-radius: 8px;
   display: grid; place-items: center; font-weight: 700; font-size: .9rem;
   background: var(--unknown);
 }
@@ -196,7 +196,8 @@ body[data-view="tree"] .fab { display: none; }
 .tree-card.focus { box-shadow: 0 0 0 3px var(--accent), 0 8px 22px rgba(0,0,0,.18); z-index: 1; }
 .tree-card.entering, .tree-card.leaving { opacity: 0; }
 .tree-card.leaving { pointer-events: none; }
-.card-photo { width: 48px; height: 48px; margin-bottom: 4px; font-size: .85rem; }
+.card-photo { width: 48px; height: 48px; margin-bottom: 4px; font-size: .85rem; border-radius: 8px; }
+.card-flag { position: absolute; top: 4px; right: 7px; font-size: 1.15rem; line-height: 1; }
 .card-first, .card-last, .card-line { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-first { font-size: .9rem; line-height: 1.2; }
 .card-last { font-size: .9rem; line-height: 1.2; font-weight: 700; }
@@ -248,7 +249,7 @@ input[type="range"]:focus { outline: none; }
 .avatar { position: relative; overflow: hidden; }
 .avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .avatar img:not([src]) { display: none; }
-.avatar.big { width: 96px; height: 96px; font-size: 1.6rem; margin: 0 auto 8px; }
+.avatar.big { width: 112px; height: 112px; font-size: 1.6rem; margin: 0 auto 8px; border-radius: 14px; }
 .person-head { text-align: center; }
 .person-head .facts { text-align: left; }
 .photo-actions { display: flex; gap: 8px; justify-content: center; margin: 4px 0 8px; flex-wrap: wrap; }

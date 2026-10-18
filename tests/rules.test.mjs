@@ -70,6 +70,8 @@ await t('lieu de décès trop long refusé', assertFails(setDoc(doc(editor, 'peo
 await t('autres prénoms acceptés', assertSucceeds(setDoc(doc(editor, 'people/p7'), { ...person('ue'), middleNames: 'Pierre Daniel' })));
 await t('case « décédé » acceptée', assertSucceeds(setDoc(doc(editor, 'people/p8'), { ...person('ue'), deceased: true })));
 await t('« décédé » non booléen refusé', assertFails(setDoc(doc(editor, 'people/p8'), { ...person('ue'), deceased: 'oui' })));
+await t('pays de naissance accepté', assertSucceeds(setDoc(doc(editor, 'people/p9'), { ...person('ue'), birthCountry: 'BE' })));
+await t('pays invalide refusé', assertFails(setDoc(doc(editor, 'people/p9'), { ...person('ue'), birthCountry: 'Belgique' })));
 await t('fiche avec photo acceptée', assertSucceeds(setDoc(doc(editor, 'people/p5'), { ...person('ue'), photo: 'ph123' })));
 await t('identifiant de photo trop long refusé', assertFails(setDoc(doc(editor, 'people/p5'), { ...person('ue'), photo: 'x'.repeat(65) })));
 await t('éditeur ajoute une photo', assertSucceeds(setDoc(doc(editor, 'photos/ph1'), photo('ue'))));
