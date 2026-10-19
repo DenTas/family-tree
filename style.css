@@ -197,7 +197,7 @@ body[data-view="tree"] .fab { display: none; }
 .tree-card.focus { box-shadow: 0 0 0 3px var(--accent), 0 8px 22px rgba(0,0,0,.18); z-index: 1; }
 .tree-card.entering, .tree-card.leaving { opacity: 0; }
 .tree-card.leaving { pointer-events: none; }
-.card-photo { width: 48px; height: 48px; margin-bottom: 4px; font-size: .85rem; border-radius: 8px; }
+.card-photo { width: 72px; height: 72px; margin-bottom: 4px; font-size: 1.05rem; border-radius: 10px; }
 .card-flag { position: absolute; top: 4px; right: 7px; font-size: 1.15rem; line-height: 1; }
 .card-first, .card-last, .card-line { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-first { font-size: .9rem; line-height: 1.2; }
