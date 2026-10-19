@@ -14,7 +14,7 @@
 function createTreeView(viewport, opts) {
   const CARD_W = 150;
   const GAP_X = 22; // entre deux familles
-  const GAP_SPOUSE = 14; // entre conjoints
+  const GAP_SPOUSE = 26; // entre conjoints (assez pour voir le trait plein ou pointillé)
   const ROW_GAP = 64; // entre deux générations
   const MIN_SCALE = 0.25;
   const MAX_SCALE = 2.5;
@@ -98,6 +98,17 @@ function createTreeView(viewport, opts) {
     }
     const shown = (id) => nodes.has(id);
     const sameRowSpouses = (n) => spouses(n.p).filter((s) => shown(s) && nodes.get(s).gen === n.gen);
+    // Co-parents : les deux parents d'un même enfant, même s'ils ne sont plus (ou n'ont jamais été)
+    // conjoints. On les place côte à côte pour que le trait de l'enfant parte du bon couple.
+    const coParents = new Map();
+    const link = (a, b) => (coParents.get(a) || coParents.set(a, new Set()).get(a)).add(b);
+    for (const p of people) if (p.fatherId && p.motherId) { link(p.fatherId, p.motherId); link(p.motherId, p.fatherId); }
+    const sameRowPartners = (n) => [
+      ...new Set([
+        ...sameRowSpouses(n),
+        ...[...(coParents.get(n.id) || [])].filter((s) => shown(s) && nodes.get(s).gen === n.gen),
+      ]),
+    ];
 
     const seen = new Set();
     for (const n of [...nodes.values()].sort((a, b) => a.order - b.order)) {
@@ -110,16 +121,16 @@ function createTreeView(viewport, opts) {
         if (seen.has(id)) continue;
         seen.add(id);
         comp.push(id);
-        for (const s of sameRowSpouses(nodes.get(id))) stack.push(s);
+        for (const s of sameRowPartners(nodes.get(id))) stack.push(s);
       }
-      const degree = (id) => sameRowSpouses(nodes.get(id)).filter((s) => comp.includes(s)).length;
+      const degree = (id) => sameRowPartners(nodes.get(id)).filter((s) => comp.includes(s)).length;
       let start = comp.find((id) => degree(id) === 1) || comp[0];
       const chain = [];
       const used = new Set();
       while (start && !used.has(start)) {
         chain.push(start);
         used.add(start);
-        start = sameRowSpouses(nodes.get(start)).find((s) => comp.includes(s) && !used.has(s));
+        start = sameRowPartners(nodes.get(start)).find((s) => comp.includes(s) && !used.has(s));
       }
       for (const id of comp) if (!used.has(id)) chain.push(id);
       const unit = { members: chain.map((id) => nodes.get(id)), x: 0 };
@@ -196,17 +207,22 @@ function createTreeView(viewport, opts) {
     const rowH = cardH + ROW_GAP;
     for (const n of nodes.values()) { n.x -= fx; n.y = n.gen * rowH; }
 
-    // Traits : conjoints (horizontal) et parents → enfants (en « peigne »).
+    // Traits : couples (plein = conjoints, pointillés = parents d'un même enfant mais pas/plus
+    // conjoints) et parents → enfants (en « peigne »).
     const links = [];
     const done = new Set();
+    const adjacent = (a, b) => a.unit === b.unit && Math.abs(a.unit.members.indexOf(a) - a.unit.members.indexOf(b)) === 1;
     for (const n of nodes.values()) {
-      for (const s of sameRowSpouses(n)) {
+      for (const s of sameRowPartners(n)) {
         const key = [n.id, s].sort().join('|');
         if (done.has(key)) continue;
         done.add(key);
         const m = nodes.get(s);
         const [a, b] = n.x < m.x ? [n, m] : [m, n];
-        links.push({ d: `M${a.x + CARD_W / 2},${a.y + cardH / 2}H${b.x - CARD_W / 2}`, cls: 'spouse' });
+        const cls = n.p.spouseIds.includes(s) ? 'spouse' : 'ex';
+        if (adjacent(a, b)) links.push({ d: `M${a.x + CARD_W / 2},${a.y + cardH / 2}H${b.x - CARD_W / 2}`, cls });
+        // Couple non voisin (ex. 3e conjoint) : arc au-dessus des cartes, pour ne pas traverser les autres.
+        else links.push({ d: `M${a.x},${a.y}C${a.x},${a.y - 34} ${b.x},${b.y - 34} ${b.x},${b.y}`, cls });
       }
     }
     const families = new Map();
@@ -220,15 +236,22 @@ function createTreeView(viewport, opts) {
     const perRow = new Map();
     for (const f of families.values()) {
       const [a, b] = f.ps;
-      const couple = b && a.unit === b.unit;
-      const top = couple ? a.y + cardH / 2 : a.y + cardH;
-      const jx = couple ? (a.x + b.x) / 2 : f.ps.reduce((s, p) => s + p.x, 0) / f.ps.length;
       const childTop = f.kids[0].y;
       const k = perRow.get(childTop) || 0;
       perRow.set(childTop, k + 1);
       const busY = childTop - ROW_GAP / 2 + ((k % 3) - 1) * 12;
       const xs = f.kids.map((c) => c.x);
-      let d = `M${jx},${top}V${busY}M${Math.min(jx, ...xs)},${busY}H${Math.max(jx, ...xs)}`;
+      let d;
+      if (b && adjacent(a, b)) {
+        // Parents côte à côte : le trait part du milieu du trait qui les relie.
+        const jx = (a.x + b.x) / 2;
+        d = `M${jx},${a.y + cardH / 2}V${busY}M${Math.min(jx, ...xs)},${busY}H${Math.max(jx, ...xs)}`;
+      } else {
+        // Sinon, un trait part de chaque parent : aucun risque de le croire relié à quelqu'un d'autre.
+        const px = f.ps.map((p) => p.x);
+        d = f.ps.map((p) => `M${p.x},${p.y + cardH}V${busY}`).join('');
+        d += `M${Math.min(...px, ...xs)},${busY}H${Math.max(...px, ...xs)}`;
+      }
       for (const x of xs) d += `M${x},${busY}V${childTop}`;
       links.push({ d, cls: 'child' });
     }

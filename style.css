@@ -181,6 +181,7 @@ body[data-view="tree"] .fab { display: none; }
 .tree-links { position: absolute; left: 0; top: 0; overflow: visible; width: 1px; height: 1px; pointer-events: none; }
 .tree-links path { fill: none; stroke: var(--link); stroke-width: 2; stroke-linejoin: round; animation: fade-in .5s .2s both; }
 .tree-links path.spouse { stroke: var(--accent); stroke-width: 2.5; }
+.tree-links path.ex { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 4; }
 @keyframes fade-in { from { opacity: 0; } }
 
 .tree-card {

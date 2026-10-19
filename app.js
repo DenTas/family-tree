@@ -525,7 +525,10 @@ function initTree() {
     if (a === 'fit') treeView.fit();
     if (a === 'center') treeView.center();
   });
-  $('#treeRoot').addEventListener('change', (e) => treeView.show((treeRootId = e.target.value)));
+  $('#treeRoot').addEventListener('change', (e) => {
+    treeView.show((treeRootId = e.target.value));
+    updateTreeInfo();
+  });
   // Toucher l'arbre referme la boîte à outils ; l'aide disparaît après la première utilisation.
   $('#treeViewport').addEventListener('pointerdown', () => {
     if (!$('#toolsPanel').hidden) $('#toolsBtn').click();
