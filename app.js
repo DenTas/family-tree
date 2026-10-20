@@ -78,6 +78,8 @@ function normalize(p) {
     fatherId: p.fatherId || '',
     motherId: p.motherId || '',
     spouseIds: Array.isArray(p.spouseIds) ? [...new Set(p.spouseIds.map(String))] : [],
+    // Conjoints dont la personne est séparée (sous-ensemble de spouseIds, enregistré des deux côtés).
+    separatedIds: Array.isArray(p.separatedIds) ? [...new Set(p.separatedIds.map(String))] : [],
     notes: String(p.notes || ''),
     photo: String(p.photo || ''), // identifiant de la photo ('' = pas de photo)
   };
@@ -118,7 +120,9 @@ function repairLinks() {
     for (const sid of p.spouseIds) {
       const s = byId(sid);
       if (!s.spouseIds.includes(p.id)) s.spouseIds.push(p.id);
+      if (p.separatedIds.includes(sid) && !s.separatedIds.includes(p.id)) s.separatedIds.push(p.id);
     }
+    p.separatedIds = p.separatedIds.filter((sid) => p.spouseIds.includes(sid));
   }
 }
 
@@ -391,11 +395,18 @@ function renderList() {
   hydratePhotos($('#personList'));
 }
 
-function chips(list) {
+function chips(list, note = () => '') {
   if (!list.length) return '<span class="muted">—</span>';
   return `<div class="chips">${sortPeople(list)
-    .map((p) => `<button class="chip" data-goto="${esc(p.id)}">${esc(fullName(p))}</button>`)
+    .map((p) => `<button class="chip" data-goto="${esc(p.id)}">${esc(fullName(p))}${deathMark(p)}${note(p) ? ` <span class="muted">· ${note(p)}</span>` : ''}</button>`)
     .join('')}</div>`;
+}
+
+/** État d'une union, vu depuis la fiche de p : séparés, ou veuf / veuve. */
+function unionNote(p, s) {
+  if (p.separatedIds.includes(s.id)) return 'séparés';
+  if (isDeceased(s) && !isDeceased(p)) return p.sex === 'F' ? 'veuve' : p.sex === 'M' ? 'veuf' : 'veuvage';
+  return '';
 }
 
 function renderPerson(id) {
@@ -423,7 +434,7 @@ function renderPerson(id) {
       ${p.notes ? `<p>${esc(p.notes).replace(/\n/g, '<br>')}</p>` : ''}
     </div>
     <div class="card"><h3>Parents</h3>${chips(parentsOf(p))}</div>
-    <div class="card"><h3>Conjoint(s)</h3>${chips(spousesOf(p))}</div>
+    <div class="card"><h3>Conjoint(s)</h3>${chips(spousesOf(p), (s) => unionNote(p, s))}</div>
     <div class="card"><h3>Enfants</h3>${chips(childrenOf(p.id))}</div>
     <div class="card"><h3>Frères et sœurs</h3>${chips(siblingsOf(p))}</div>
     <div class="actions">
@@ -630,13 +641,15 @@ function openForm(person = null, preset = {}) {
   fillSelect(form.fatherId, notDescendant.filter((o) => o.sex !== 'F'), p.fatherId, '— inconnu —');
   fillSelect(form.motherId, notDescendant.filter((o) => o.sex !== 'M'), p.motherId, '— inconnue —');
   formSpouses = [...p.spouseIds];
+  formSeparated = new Set(p.separatedIds);
   spouseCandidates = others;
   renderSpouses();
   dialog.showModal();
 }
 
-// Conjoints : une étiquette par conjoint (✕ pour le retirer) et une liste pour en ajouter.
+// Conjoints : une ligne par conjoint (case « séparés », ✕ pour le retirer) et une liste pour en ajouter.
 let formSpouses = [];
+let formSeparated = new Set();
 let spouseCandidates = [];
 
 function renderSpouses() {
@@ -644,7 +657,14 @@ function renderSpouses() {
     ? formSpouses
         .map(byId)
         .filter(Boolean)
-        .map((s) => `<button type="button" class="chip removable" data-spouse-remove="${esc(s.id)}" aria-label="Retirer ${esc(fullName(s))}">${esc(fullName(s))} <span aria-hidden="true">✕</span></button>`)
+        .map(
+          (s) => `
+          <div class="spouse-row">
+            <span class="spouse-name">${esc(fullName(s))}${deathMark(s)}</span>
+            <label class="check small"><input type="checkbox" data-spouse-sep="${esc(s.id)}"${formSeparated.has(s.id) ? ' checked' : ''}> séparés</label>
+            <button type="button" class="icon-btn small" data-spouse-remove="${esc(s.id)}" aria-label="Retirer ${esc(fullName(s))}">✕</button>
+          </div>`
+        )
         .join('')
     : '<span class="muted small">Aucun</span>';
   fillSelect($('#spouseAdd'), spouseCandidates.filter((o) => !formSpouses.includes(o.id)), [], '+ Ajouter un conjoint…');
@@ -654,7 +674,14 @@ $('#spouseChips').addEventListener('click', (e) => {
   const id = e.target.closest('[data-spouse-remove]')?.dataset.spouseRemove;
   if (!id) return;
   formSpouses = formSpouses.filter((x) => x !== id);
+  formSeparated.delete(id);
   renderSpouses();
+});
+$('#spouseChips').addEventListener('change', (e) => {
+  const id = e.target.dataset.spouseSep;
+  if (!id) return;
+  if (e.target.checked) formSeparated.add(id);
+  else formSeparated.delete(id);
 });
 $('#spouseAdd').addEventListener('change', (e) => {
   if (e.target.value) formSpouses.push(e.target.value);
@@ -680,6 +707,7 @@ form.addEventListener('submit', (ev) => {
   const motherId = form.motherId.value;
   if (fatherId && fatherId === motherId) return formError('Le père et la mère doivent être différents.');
   const spouseIds = [...formSpouses];
+  const separatedIds = spouseIds.filter((sid) => formSeparated.has(sid));
 
   const data = normalize({
     id,
@@ -697,6 +725,7 @@ form.addEventListener('submit', (ev) => {
     fatherId,
     motherId,
     spouseIds,
+    separatedIds,
     notes: form.notes.value,
     // La photo se gère depuis la fiche, pas dans ce formulaire : on garde celle qui existe.
     photo: byId(id)?.photo || '',
@@ -712,11 +741,19 @@ form.addEventListener('submit', (ev) => {
     // Conjoints : on garde le lien des deux côtés.
     for (const sid of oldSpouses) if (!spouseIds.includes(sid)) {
       const s = byId(sid);
-      if (s) s.spouseIds = s.spouseIds.filter((x) => x !== id);
+      if (s) {
+        s.spouseIds = s.spouseIds.filter((x) => x !== id);
+        s.separatedIds = s.separatedIds.filter((x) => x !== id);
+      }
     }
     for (const sid of spouseIds) {
       const s = byId(sid);
-      if (s && !s.spouseIds.includes(id)) s.spouseIds.push(id);
+      if (!s) continue;
+      if (!s.spouseIds.includes(id)) s.spouseIds.push(id);
+      // « Séparés » est le même fait vu des deux côtés.
+      const sep = separatedIds.includes(sid);
+      if (sep && !s.separatedIds.includes(id)) s.separatedIds.push(id);
+      if (!sep) s.separatedIds = s.separatedIds.filter((x) => x !== id);
     }
   });
   dialog.close();
@@ -850,6 +887,7 @@ function toGedcom() {
     out.push(`0 ${f.id} FAM`);
     if (f.husb) out.push(`1 HUSB ${indi.get(f.husb)}`);
     if (f.wife) out.push(`1 WIFE ${indi.get(f.wife)}`);
+    if (f.husb && f.wife && byId(f.husb)?.separatedIds.includes(f.wife)) out.push('1 DIV Y');
     for (const c of f.children) out.push(`1 CHIL ${indi.get(c)}`);
   }
   out.push('0 TRLR');

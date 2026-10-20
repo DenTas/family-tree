@@ -32,6 +32,10 @@ Le mode est choisi dans `config.js` : `firebase: null` = local ; une configurati
     En mode Ancêtres / Descendants, le niveau compte les générations ;
   - informations affichées sur les cartes : photo, années, date et lieu de naissance, âge.
   Ces réglages sont mémorisés sur chaque téléphone.
+- **Couples** : dans le formulaire, chaque conjoint a une case « séparés ». Dans l'arbre : trait plein vert =
+  en couple ; trait gris avec † = union terminée par un décès (déduit automatiquement) ; pointillés = séparés ;
+  pointillés fins gris = parents d'un enfant sans être conjoints. À partir du 3e conjoint, le trait passe
+  sous les cartes ; chaque enfant descend du trait de ses deux parents.
 - **Photos** : sur la fiche d'une personne, « Ajouter une photo » (galerie ou appareil photo).
   La photo est recadrée en carré et réduite (≈ 20–40 Ko) pour rester légère.
 - Export **JSON** et **GEDCOM 5.5.1** (format standard des logiciels de généalogie), import JSON avec fusion.

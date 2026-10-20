@@ -15,7 +15,7 @@ function createTreeView(viewport, opts) {
   const CARD_W = 150;
   const GAP_X = 22; // entre deux familles
   const GAP_SPOUSE = 26; // entre conjoints (assez pour voir le trait plein ou pointillé)
-  const ROW_GAP = 64; // entre deux générations
+  const ROW_GAP = 84; // entre deux générations (place pour les traits des couples non voisins)
   const MIN_SCALE = 0.25;
   const MAX_SCALE = 2.5;
 
@@ -207,10 +207,16 @@ function createTreeView(viewport, opts) {
     const rowH = cardH + ROW_GAP;
     for (const n of nodes.values()) { n.x -= fx; n.y = n.gen * rowH; }
 
-    // Traits : couples (plein = conjoints, pointillés = parents d'un même enfant mais pas/plus
-    // conjoints) et parents → enfants (en « peigne »).
+    // Traits des couples :
+    //   plein vert = en couple ; plein gris + † = union terminée par un décès ;
+    //   pointillés = séparés ; pointillés fins gris = parents d'un enfant sans être conjoints.
+    // Couples voisins : trait court entre les deux cartes. Sinon (3e conjoint…), le trait passe
+    // sous les cartes, chaque couple à sa propre hauteur.
     const links = [];
     const done = new Set();
+    const coupleAnchor = new Map(); // « id|id » -> point d'où descend le trait des enfants
+    const railsPerUnit = new Map();
+    const dead = (p) => Boolean(p.deceased || p.deathDate || p.deathPlace);
     const adjacent = (a, b) => a.unit === b.unit && Math.abs(a.unit.members.indexOf(a) - a.unit.members.indexOf(b)) === 1;
     for (const n of nodes.values()) {
       for (const s of sameRowPartners(n)) {
@@ -219,10 +225,28 @@ function createTreeView(viewport, opts) {
         done.add(key);
         const m = nodes.get(s);
         const [a, b] = n.x < m.x ? [n, m] : [m, n];
-        const cls = n.p.spouseIds.includes(s) ? 'spouse' : 'ex';
-        if (adjacent(a, b)) links.push({ d: `M${a.x + CARD_W / 2},${a.y + cardH / 2}H${b.x - CARD_W / 2}`, cls });
-        // Couple non voisin (ex. 3e conjoint) : arc au-dessus des cartes, pour ne pas traverser les autres.
-        else links.push({ d: `M${a.x},${a.y}C${a.x},${a.y - 34} ${b.x},${b.y - 34} ${b.x},${b.y}`, cls });
+        const married = n.p.spouseIds.includes(s);
+        const separated = married && (n.p.separatedIds?.includes(s) || m.p.separatedIds?.includes(n.id));
+        const widowed = married && !separated && (dead(n.p) || dead(m.p));
+        const cls = !married ? 'coparent' : separated ? 'ex' : widowed ? 'widow' : 'spouse';
+        let anchor;
+        if (adjacent(a, b)) {
+          const y = a.y + cardH / 2;
+          links.push({ d: `M${a.x + CARD_W / 2},${y}H${b.x - CARD_W / 2}`, cls });
+          anchor = { x: (a.x + b.x) / 2, y };
+        } else if (a.unit === b.unit) {
+          const k = railsPerUnit.get(a.unit) || 0;
+          railsPerUnit.set(a.unit, k + 1);
+          const y = a.y + cardH + 12 + k * 10;
+          const xa = a.x + 18 + k * 10;
+          const xb = b.x - 18 - k * 10;
+          links.push({ d: `M${xa},${a.y + cardH}V${y}H${xb}V${b.y + cardH}`, cls });
+          anchor = { x: (xa + xb) / 2, y };
+        }
+        if (anchor) {
+          coupleAnchor.set(key, anchor);
+          if (cls === 'widow') links.push({ label: '†', x: anchor.x, y: anchor.y - 5 });
+        }
       }
     }
     const families = new Map();
@@ -239,13 +263,14 @@ function createTreeView(viewport, opts) {
       const childTop = f.kids[0].y;
       const k = perRow.get(childTop) || 0;
       perRow.set(childTop, k + 1);
-      const busY = childTop - ROW_GAP / 2 + ((k % 3) - 1) * 12;
+      const busY = childTop - 26 + ((k % 3) - 1) * 8;
       const xs = f.kids.map((c) => c.x);
       let d;
-      if (b && adjacent(a, b)) {
-        // Parents côte à côte : le trait part du milieu du trait qui les relie.
-        const jx = (a.x + b.x) / 2;
-        d = `M${jx},${a.y + cardH / 2}V${busY}M${Math.min(jx, ...xs)},${busY}H${Math.max(jx, ...xs)}`;
+      const anchor = b && coupleAnchor.get([a.id, b.id].sort().join('|'));
+      if (anchor) {
+        // Le trait des enfants part du milieu du trait qui relie leurs parents.
+        const jx = anchor.x;
+        d = `M${jx},${anchor.y}V${busY}M${Math.min(jx, ...xs)},${busY}H${Math.max(jx, ...xs)}`;
       } else {
         // Sinon, un trait part de chaque parent : aucun risque de le croire relié à quelqu'un d'autre.
         const px = f.ps.map((p) => p.x);
@@ -293,7 +318,9 @@ function createTreeView(viewport, opts) {
       // Double requestAnimationFrame : la carte apparaît d'abord à l'origine puis glisse à sa place.
       requestAnimationFrame(() => (el.style.transform = `translate(${n.x - CARD_W / 2}px, ${n.y}px)`));
     }
-    svg.innerHTML = layout.links.map((l) => `<path class="${l.cls}" d="${l.d}"/>`).join('');
+    svg.innerHTML = layout.links
+      .map((l) => (l.label ? `<text class="link-label" x="${l.x}" y="${l.y}">${l.label}</text>` : `<path class="${l.cls}" d="${l.d}"/>`))
+      .join('');
     opts.afterRender?.(world);
   }
 

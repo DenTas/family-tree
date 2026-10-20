@@ -154,6 +154,10 @@ label.check input { width: auto; margin: 0; }
 .request-actions .btn { margin: 0; }
 .contact-btn { width: 100%; margin-bottom: 12px; }
 .add-member .contact-btn { grid-column: 1 / -1; margin: 0; }
+.spouse-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.spouse-row:last-child { border-bottom: 0; }
+.spouse-name { color: var(--text); }
+label.check.small { margin: 0; font-size: .85rem; gap: 4px; }
 .field-label { font-size: .9rem; color: var(--muted); margin-bottom: 6px; }
 .spouse-chips { margin-bottom: 8px; }
 .chip.removable span { margin-left: 4px; color: var(--muted); }
@@ -181,7 +185,11 @@ body[data-view="tree"] .fab { display: none; }
 .tree-links { position: absolute; left: 0; top: 0; overflow: visible; width: 1px; height: 1px; pointer-events: none; }
 .tree-links path { fill: none; stroke: var(--link); stroke-width: 2; stroke-linejoin: round; animation: fade-in .5s .2s both; }
 .tree-links path.spouse { stroke: var(--accent); stroke-width: 2.5; }
-.tree-links path.ex { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 4; }
+.tree-links path.ex { stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: 6 4; }
+.tree-links path.widow { stroke: var(--muted); stroke-width: 2.5; }
+.tree-links path.coparent { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 2 3; }
+.tree-links .link-label { fill: var(--muted); font-size: 13px; font-weight: 700; text-anchor: middle; animation: fade-in .5s .2s both; }
+.spouse-chips { display: block; }
 @keyframes fade-in { from { opacity: 0; } }
 
 .tree-card {

@@ -139,12 +139,12 @@ function dbMessage(e) {
 
 /* ------------------------------ Écriture -------------------------------- */
 
-// Champs ajoutés après coup (photo, lieu de décès, autres prénoms, décédé, pays) omis quand ils sont vides : une fiche qui ne les
+// Champs ajoutés après coup (photo, lieu de décès, autres prénoms, décédé, nationalité, séparations) omis quand ils sont vides : une fiche qui ne les
 // utilise pas reste acceptée par des règles Firestore plus anciennes. set() remplace le document,
 // donc vider un de ces champs le retire bien.
-const OPTIONAL = ['photo', 'deathPlace', 'middleNames', 'deceased', 'birthCountry'];
+const OPTIONAL = ['photo', 'deathPlace', 'middleNames', 'deceased', 'birthCountry', 'separatedIds'];
 const personData = ({ id, ...rest }) => {
-  for (const k of OPTIONAL) if (!rest[k]) delete rest[k];
+  for (const k of OPTIONAL) if (!rest[k] || (Array.isArray(rest[k]) && !rest[k].length)) delete rest[k];
   return rest;
 };
 

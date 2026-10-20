@@ -72,6 +72,8 @@ await t('case « décédé » acceptée', assertSucceeds(setDoc(doc(editor, 'peo
 await t('« décédé » non booléen refusé', assertFails(setDoc(doc(editor, 'people/p8'), { ...person('ue'), deceased: 'oui' })));
 await t('pays de naissance accepté', assertSucceeds(setDoc(doc(editor, 'people/p9'), { ...person('ue'), birthCountry: 'BE' })));
 await t('pays invalide refusé', assertFails(setDoc(doc(editor, 'people/p9'), { ...person('ue'), birthCountry: 'Belgique' })));
+await t('séparations acceptées', assertSucceeds(setDoc(doc(editor, 'people/p10'), { ...person('ue'), separatedIds: ['p1'] })));
+await t('séparations non-liste refusées', assertFails(setDoc(doc(editor, 'people/p10'), { ...person('ue'), separatedIds: 'p1' })));
 await t('fiche avec photo acceptée', assertSucceeds(setDoc(doc(editor, 'people/p5'), { ...person('ue'), photo: 'ph123' })));
 await t('identifiant de photo trop long refusé', assertFails(setDoc(doc(editor, 'people/p5'), { ...person('ue'), photo: 'x'.repeat(65) })));
 await t('éditeur ajoute une photo', assertSucceeds(setDoc(doc(editor, 'photos/ph1'), photo('ue'))));
