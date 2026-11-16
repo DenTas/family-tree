@@ -75,6 +75,7 @@ function normalize(p) {
     deathPlace: String(p.deathPlace || '').trim(),
     deceased: p.deceased === true, // décédé·e même sans date ni lieu connus
     deathDate: p.deathDate || '',
+    occupation: String(p.occupation || '').trim(), // métier
     fatherId: p.fatherId || '',
     motherId: p.motherId || '',
     spouseIds: Array.isArray(p.spouseIds) ? [...new Set(p.spouseIds.map(String))] : [],
@@ -374,7 +375,7 @@ const go = (hash) => (location.hash = hash);
 function renderList() {
   const q = fold($('#search').value.trim());
   const list = sortPeople(people).filter(
-    (p) => !q || fold(`${p.firstName} ${p.middleNames} ${p.lastName} ${p.birthPlace} ${countryName(p.birthCountry)} ${p.deathPlace}`).includes(q)
+    (p) => !q || fold(`${p.firstName} ${p.middleNames} ${p.lastName} ${p.birthPlace} ${countryName(p.birthCountry)} ${p.deathPlace} ${p.occupation}`).includes(q)
   );
   $('#personList').innerHTML = list
     .map(
@@ -416,6 +417,7 @@ function renderPerson(id) {
     ['Nationalité', p.birthCountry ? `${flag(p.birthCountry)} ${countryName(p.birthCountry)}` : ''],
     ['Décès', [formatDate(p.deathDate), p.deathPlace].filter(Boolean).join(' à ') || (p.deceased ? 'date inconnue' : '')],
     ['Âge', ageText(p)],
+    ['Métier', p.occupation],
     ['Sexe', { M: 'Homme', F: 'Femme' }[p.sex] || ''],
   ].filter(([, v]) => v);
 
@@ -441,6 +443,7 @@ function renderPerson(id) {
       <button class="btn primary edit-only" data-edit="${esc(p.id)}">Modifier</button>
       <button class="btn edit-only" data-add-child="${esc(p.id)}">+ Ajouter un enfant</button>
       <button class="btn" data-show-tree="${esc(p.id)}">Voir dans l’arbre</button>
+      <button class="btn${p.id === meId ? ' me-on' : ''}" data-me="${esc(p.id)}" title="L’application s’ouvrira sur cette fiche, sur ce téléphone">${p.id === meId ? '★ Ma fiche (retirer)' : '☆ C’est moi'}</button>
       <button class="btn danger edit-only" data-delete="${esc(p.id)}">Supprimer</button>
     </div>`;
   hydratePhotos($('#view-person'));
@@ -453,16 +456,28 @@ const sortByBirth = (list) =>
 
 // Réglages d'affichage de l'arbre, mémorisés sur ce téléphone.
 const PREFS_KEY = 'arbre-familial:affichage';
-const FIELD_LABELS = { photo: 'Photo', flag: 'Drapeau de la nationalité', years: 'Années', birth: 'Date de naissance', place: 'Lieu de naissance', deathPlace: 'Lieu de décès', age: 'Âge' };
-const prefs = { depth: 2, mode: 'all', fields: ['photo', 'flag', 'years'], ...loadJson(PREFS_KEY, {}) };
-// Réglages enregistrés avant l'ajout du drapeau : on l'active une fois.
+const FIELD_LABELS = { photo: 'Photo', flag: 'Drapeau de la nationalité', cross: 'Croix † des personnes décédées', years: 'Années', birth: 'Date de naissance', place: 'Lieu de naissance', deathPlace: 'Lieu de décès', age: 'Âge', job: 'Métier' };
+const prefs = { depth: 2, mode: 'all', fields: ['photo', 'flag', 'cross', 'years'], ...loadJson(PREFS_KEY, {}) };
+// Réglages enregistrés avant l'ajout d'une option affichée par défaut : on l'active une fois.
 if (!prefs.v) { prefs.v = 2; if (!prefs.fields.includes('flag')) prefs.fields.push('flag'); }
+if (prefs.v < 3) { prefs.v = 3; if (!prefs.fields.includes('cross')) prefs.fields.push('cross'); }
 const savePrefs = () => {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* préférence non mémorisée */ }
 };
 
 let treeRootId = '';
 let treeView = null;
+
+// « Ma fiche » : la personne que l'utilisateur de ce téléphone a désignée comme lui-même.
+// L'application s'ouvre sur l'arbre centré sur elle.
+const ME_KEY = 'arbre-familial:moi';
+let meId = loadJson(ME_KEY, '');
+function setMe(id) {
+  meId = meId === id ? '' : id;
+  try { localStorage.setItem(ME_KEY, JSON.stringify(meId)); } catch { /* non mémorisé */ }
+  toast(meId ? 'Fiche mémorisée : l’application s’ouvrira sur elle' : 'Ce n’est plus votre fiche de départ');
+  route(true);
+}
 
 function treeCardHtml(p, fields) {
   const lines = [];
@@ -471,11 +486,13 @@ function treeCardHtml(p, fields) {
   if (fields.has('place')) lines.push(p.birthPlace);
   if (fields.has('deathPlace')) lines.push(p.deathPlace ? `† ${p.deathPlace}` : '');
   if (fields.has('age')) lines.push(ageText(p));
+  if (fields.has('job')) lines.push(p.occupation);
   return `
+    ${fields.has('cross') && isDeceased(p) ? `<span class="card-cross" title="Décédé${p.sex === 'F' ? 'e' : ''}">†</span>` : ''}
     ${fields.has('flag') && p.birthCountry ? `<span class="card-flag" title="Nationalité : ${esc(countryName(p.birthCountry))}">${flag(p.birthCountry)}</span>` : ''}
     ${fields.has('photo') ? avatarHtml(p, 'avatar card-photo') : ''}
     <span class="card-first">${esc(p.firstName)}</span>
-    <span class="card-last">${esc(p.lastName)}${deathMark(p)}</span>
+    <span class="card-last">${esc(p.lastName)}</span>
     ${lines.map((l) => `<span class="card-line">${esc(l) || '&nbsp;'}</span>`).join('')}`;
 }
 
@@ -573,12 +590,12 @@ function updateTreeInfo() {
 function renderTree() {
   if (!treeView) initTree();
   if (!byId(treeRootId)) {
-    // Par défaut : la personne la plus ancienne sans parents connus.
+    // Par défaut : « ma fiche », sinon la personne la plus ancienne sans parents connus.
     const roots = sortByBirth(people.filter((p) => !parentsOf(p).length));
-    treeRootId = (roots[0] || people[0] || {}).id || '';
+    treeRootId = byId(meId) ? meId : (roots[0] || people[0] || {}).id || '';
   }
   $('#treeRoot').innerHTML = sortPeople(people)
-    .map((p) => `<option value="${esc(p.id)}"${p.id === treeRootId ? ' selected' : ''}>${esc(fullName(p))}</option>`)
+    .map((p) => `<option value="${esc(p.id)}"${p.id === treeRootId ? ' selected' : ''}>${esc(sortName(p))}</option>`)
     .join('');
   $('#treeEmpty').hidden = Boolean(treeRootId);
   // La vue doit être visible pour mesurer l'écran : on attend l'affichage.
@@ -604,6 +621,9 @@ function fillCountries(selected) {
     `<optgroup label="Tous les pays">${[...COUNTRY_CODES].sort(byName).map(opt).join('')}</optgroup>`;
 }
 
+/** « Nom Prénom » : les listes de choix sont classées par nom de famille. */
+const sortName = (p) => `${p.lastName} ${p.firstName}`.trim();
+
 function fillSelect(select, candidates, selected, emptyLabel) {
   const sel = new Set([].concat(selected || []));
   select.innerHTML =
@@ -611,9 +631,59 @@ function fillSelect(select, candidates, selected, emptyLabel) {
     sortPeople(candidates)
       .map((p) => {
         const y = year(p.birthDate);
-        return `<option value="${esc(p.id)}"${sel.has(p.id) ? ' selected' : ''}>${esc(fullName(p))}${y ? ` (${y})` : ''}</option>`;
+        return `<option value="${esc(p.id)}"${sel.has(p.id) ? ' selected' : ''}>${esc(sortName(p))}${y ? ` (${y})` : ''}</option>`;
       })
       .join('');
+}
+
+/* Liens possibles : on ne propose pas les personnes qui ne peuvent pas être le père, la mère
+   ou le conjoint de la personne en cours de saisie. Les dates ne servent que si elles sont connues. */
+const yearNum = (iso) => (iso ? +iso.slice(0, 4) : 0);
+const MIN_PARENT_AGE = 12;
+
+function canBeParent(o, child, role) {
+  if (o.id === child.id) return false;
+  if (role === 'father' ? o.sex === 'F' : o.sex === 'M') return false;
+  if (child.id && isAncestor(child.id, o.id)) return false; // un descendant ne peut pas être un parent
+  if (child.spouseIds.includes(o.id)) return false;
+  if ((child.fatherId && o.fatherId === child.fatherId) || (child.motherId && o.motherId === child.motherId)) return false; // frère ou sœur
+  const cb = yearNum(child.birthDate);
+  const ob = yearNum(o.birthDate);
+  if (cb && ob && cb - ob < MIN_PARENT_AGE) return false; // trop jeune, ou né après l'enfant
+  const od = yearNum(o.deathDate);
+  if (cb && od && od < cb - (role === 'father' ? 1 : 0)) return false; // décédé avant la naissance
+  return true;
+}
+
+function canBeSpouse(o, p) {
+  if (o.id === p.id) return false;
+  if (p.id && (isAncestor(o.id, p.id) || isAncestor(p.id, o.id))) return false;
+  if (o.id === p.fatherId || o.id === p.motherId) return false;
+  if ((p.fatherId && o.fatherId === p.fatherId) || (p.motherId && o.motherId === p.motherId)) return false; // frère ou sœur
+  const [pb, pd, ob, od] = [p.birthDate, p.deathDate, o.birthDate, o.deathDate].map(yearNum);
+  if ((pd && ob && ob > pd) || (od && pb && pb > od)) return false; // pas contemporains
+  return true;
+}
+
+/** État de la personne tel qu'il est en train d'être saisi dans le formulaire. */
+function formPerson() {
+  return {
+    id: form.personId.value,
+    sex: form.sex.value,
+    birthDate: parseDate(form.birthDate.value) || '',
+    deathDate: parseDate(form.deathDate.value) || '',
+    fatherId: form.fatherId.value,
+    motherId: form.motherId.value,
+    spouseIds: formSpouses,
+  };
+}
+
+/** Remplit les listes Père / Mère / Conjoint ; une personne déjà choisie reste toujours proposée. */
+function fillRelationLists(current = formPerson()) {
+  const ok = (o, test, selected) => o.id === selected || test(o);
+  fillSelect(form.fatherId, people.filter((o) => ok(o, (x) => canBeParent(x, current, 'father'), current.fatherId)), current.fatherId, '— inconnu —');
+  fillSelect(form.motherId, people.filter((o) => ok(o, (x) => canBeParent(x, current, 'mother'), current.motherId)), current.motherId, '— inconnue —');
+  renderSpouses();
 }
 
 function openForm(person = null, preset = {}) {
@@ -633,24 +703,18 @@ function openForm(person = null, preset = {}) {
   form.deathPlace.value = p.deathPlace;
   form.deceased.checked = isDeceased(p);
   form.deathDate.value = formatDate(p.deathDate);
+  form.occupation.value = p.occupation;
   form.notes.value = p.notes;
 
-  // On n'autorise pas de lien qui créerait une boucle (ex. être son propre grand-père).
-  const others = people.filter((o) => o.id !== p.id);
-  const notDescendant = others.filter((o) => !person || !isAncestor(p.id, o.id));
-  fillSelect(form.fatherId, notDescendant.filter((o) => o.sex !== 'F'), p.fatherId, '— inconnu —');
-  fillSelect(form.motherId, notDescendant.filter((o) => o.sex !== 'M'), p.motherId, '— inconnue —');
   formSpouses = [...p.spouseIds];
   formSeparated = new Set(p.separatedIds);
-  spouseCandidates = others;
-  renderSpouses();
+  fillRelationLists({ ...p, id: person ? p.id : '' });
   dialog.showModal();
 }
 
 // Conjoints : une ligne par conjoint (case « séparés », ✕ pour le retirer) et une liste pour en ajouter.
 let formSpouses = [];
 let formSeparated = new Set();
-let spouseCandidates = [];
 
 function renderSpouses() {
   $('#spouseChips').innerHTML = formSpouses.length
@@ -667,7 +731,8 @@ function renderSpouses() {
         )
         .join('')
     : '<span class="muted small">Aucun</span>';
-  fillSelect($('#spouseAdd'), spouseCandidates.filter((o) => !formSpouses.includes(o.id)), [], '+ Ajouter un conjoint…');
+  const current = formPerson();
+  fillSelect($('#spouseAdd'), people.filter((o) => !formSpouses.includes(o.id) && canBeSpouse(o, current)), [], '+ Ajouter un conjoint…');
 }
 
 $('#spouseChips').addEventListener('click', (e) => {
@@ -722,6 +787,7 @@ form.addEventListener('submit', (ev) => {
     // Une date ou un lieu de décès suffit ; la case sert quand on ne connaît ni l'un ni l'autre.
     deceased: form.deceased.checked && !form.deathDate.value.trim() && !form.deathPlace.value.trim(),
     deathDate,
+    occupation: form.occupation.value,
     fatherId,
     motherId,
     spouseIds,
@@ -770,13 +836,18 @@ for (const field of [form.deathDate, form.deathPlace]) {
   });
 }
 
-// Affiche la date telle qu'elle a été comprise (28021974 → 28/02/1974).
+// Affiche la date telle qu'elle a été comprise (28021974 → 28/02/1974),
+// puis met à jour les personnes proposées comme parents ou conjoints.
 for (const field of [form.birthDate, form.deathDate]) {
   field.addEventListener('blur', () => {
     const iso = parseDate(field.value);
     if (iso) field.value = formatDate(iso);
+    fillRelationLists();
   });
 }
+form.sex.addEventListener('change', () => fillRelationLists());
+form.fatherId.addEventListener('change', () => fillRelationLists());
+form.motherId.addEventListener('change', () => fillRelationLists());
 // Des mises à jour d'autres membres ont pu arriver pendant la saisie.
 dialog.addEventListener('close', () => SHARED && refresh());
 
@@ -863,6 +934,7 @@ function toGedcom() {
     out.push(`2 GIVN ${given}`, `2 SURN ${clean(p.lastName)}`);
     if (p.sex !== 'U') out.push(`1 SEX ${p.sex}`);
     if (p.birthCountry) out.push(`1 NATI ${clean(countryName(p.birthCountry))}`);
+    if (p.occupation) out.push(`1 OCCU ${clean(p.occupation)}`);
     if (p.birthDate || p.birthPlace) {
       out.push('1 BIRT');
       if (p.birthDate) out.push(`2 DATE ${gedDate(p.birthDate)}`);
@@ -959,7 +1031,7 @@ $$('.tab').forEach((t) =>
 
 // Délégation : un seul écouteur pour tous les boutons générés dynamiquement.
 document.addEventListener('click', (e) => {
-  const el = e.target.closest('[data-id],[data-goto],[data-edit],[data-add-child],[data-show-tree],[data-delete],[data-back]');
+  const el = e.target.closest('[data-id],[data-goto],[data-edit],[data-add-child],[data-show-tree],[data-me],[data-delete],[data-back]');
   if (!el) return;
   const ds = el.dataset;
   if (ds.id || ds.goto) go(`#/personne/${ds.id || ds.goto}`);
@@ -974,6 +1046,7 @@ document.addEventListener('click', (e) => {
       motherId: parent.sex === 'F' ? parent.id : other,
     });
   } else if (ds.showTree) { treeRootId = ds.showTree; go('#/arbre'); }
+  else if (ds.me) setMe(ds.me);
   else if (ds.delete) deletePerson(ds.delete);
   else if ('back' in ds) history.length > 1 ? history.back() : go('#/liste');
 });
@@ -1333,6 +1406,8 @@ measureChrome();
 window.addEventListener('resize', measureChrome);
 
 window.addEventListener('hashchange', () => route());
+// Ouverture de l'application (sans adresse de page précise) : l'arbre, centré sur « ma fiche ».
+if (meId && !location.hash.replace(/^#\/?/, '')) history.replaceState(null, '', '#/arbre');
 if (SHARED) startShared();
 else route();
 

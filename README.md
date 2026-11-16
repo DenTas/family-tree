@@ -18,10 +18,13 @@ Le mode est choisi dans `config.js` : `firebase: null` = local ; une configurati
 
 ## Fonctionnalités
 
-- Fiche par personne : prénom, nom, sexe, date et lieu de naissance, date de décès, notes.
+- Fiche par personne : prénom, autres prénoms, nom, sexe, date et lieu de naissance, nationalité, date et lieu de décès, métier, notes.
 - Dates partielles acceptées : `24/05/1952`, `05/1952` ou `1952` (les dates impossibles comme 31/02 sont refusées).
 - Parenté : père, mère, conjoint(s). Enfants et frères/sœurs sont **déduits automatiquement**.
-  Les liens impossibles (être son propre ancêtre) sont bloqués.
+  Les listes de choix sont classées par nom de famille et ne proposent pas les liens impossibles :
+  soi-même, un descendant, un frère ou une sœur, un conjoint comme parent ; un père qui est une femme (et inversement) ;
+  quand les années sont connues, un parent de moins de 12 ans à la naissance ou décédé avant elle, un conjoint pas contemporain.
+  Un lien déjà enregistré reste toujours affiché, même s'il paraît impossible.
 - Liste avec recherche (insensible aux accents).
 - **Arbre interactif** : on le déplace au doigt, on zoome à deux doigts (ou avec les boutons + / − / ⤢).
   Toucher une personne la **centre** (animation) ; la toucher à nouveau ouvre sa fiche.
@@ -30,8 +33,11 @@ Le mode est choisi dans `config.js` : `firebase: null` = local ; une configurati
   - curseur **Niveaux** : 0 = la personne seule ; 1 = conjoints, parents, frères et sœurs, enfants ;
     2 = on ajoute les personnes à deux liens (grands-parents, oncles et tantes, neveux, petits-enfants, beaux-parents…), etc.
     En mode Ancêtres / Descendants, le niveau compte les générations ;
-  - informations affichées sur les cartes : photo, années, date et lieu de naissance, âge.
+  - informations affichées sur les cartes : photo, drapeau, croix † des personnes décédées (dans le coin de la carte),
+    années, date et lieu de naissance, lieu de décès, âge, métier.
   Ces réglages sont mémorisés sur chaque téléphone.
+- **Ma fiche** : sur sa propre fiche, « ☆ C'est moi ». L'application s'ouvre alors sur l'arbre centré sur cette personne
+  (réglage propre à chaque téléphone ; toucher « ★ Ma fiche » pour l'annuler).
 - **Couples** : dans le formulaire, chaque conjoint a une case « séparés ». Dans l'arbre : trait plein vert =
   en couple ; trait gris avec † = union terminée par un décès (déduit automatiquement) ; pointillés = séparés ;
   pointillés fins gris = parents d'un enfant sans être conjoints. À partir du 3e conjoint, le trait passe

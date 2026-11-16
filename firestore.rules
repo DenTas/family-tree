@@ -29,7 +29,7 @@ service cloud.firestore {
     function validPerson(d) {
       return d.keys().hasOnly(['firstName', 'lastName', 'sex', 'birthDate', 'birthPlace', 'deathDate',
                                'fatherId', 'motherId', 'spouseIds', 'notes', 'photo', 'deathPlace',
-                               'middleNames', 'deceased', 'birthCountry', 'separatedIds',
+                               'middleNames', 'deceased', 'birthCountry', 'separatedIds', 'occupation',
                                'updatedBy', 'updatedAt'])
         && isText(d.firstName, 100) && d.firstName.size() > 0
         && isText(d.lastName, 100) && d.lastName.size() > 0
@@ -44,6 +44,7 @@ service cloud.firestore {
         && (!('deceased' in d) || d.deceased is bool)
         && (!('birthCountry' in d) || (d.birthCountry is string && d.birthCountry.matches('[A-Z]{2}')))
         && (!('separatedIds' in d) || (d.separatedIds is list && d.separatedIds.size() <= 30))
+        && (!('occupation' in d) || isText(d.occupation, 200))
         // Chaque fiche garde la trace de sa dernière modification.
         && d.updatedBy == request.auth.uid
         && d.updatedAt == request.time;

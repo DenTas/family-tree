@@ -207,6 +207,8 @@ body[data-view="tree"] .fab { display: none; }
 .tree-card.leaving { pointer-events: none; }
 .card-photo { width: 72px; height: 72px; margin-bottom: 4px; font-size: 1.05rem; border-radius: 10px; }
 .card-flag { position: absolute; top: 4px; right: 7px; font-size: 1.15rem; line-height: 1; }
+.btn.me-on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.card-cross { position: absolute; top: 5px; left: 9px; font-size: 1.1rem; font-weight: 700; line-height: 1; color: var(--text); }
 .card-first, .card-last, .card-line { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-first { font-size: .9rem; line-height: 1.2; }
 .card-last { font-size: .9rem; line-height: 1.2; font-weight: 700; }

@@ -65,6 +65,9 @@ await t('écriture groupée de 200 fiches + historique', (async () => {
 })());
 const img = 'data:image/jpeg;base64,' + 'A'.repeat(20000);
 const photo = (uid, data = img) => ({ data, personId: 'p1', by: uid, at: serverTimestamp() });
+await t('métier accepté', assertSucceeds(setDoc(doc(editor, 'people/p6'), { ...person('ue'), occupation: 'Ébéniste' })));
+await t('métier trop long refusé', assertFails(setDoc(doc(editor, 'people/p6'), { ...person('ue'), occupation: 'x'.repeat(201) })));
+await t('métier non texte refusé', assertFails(setDoc(doc(editor, 'people/p6'), { ...person('ue'), occupation: 12 })));
 await t('lieu de décès accepté', assertSucceeds(setDoc(doc(editor, 'people/p6'), { ...person('ue'), deathPlace: 'Lyon' })));
 await t('lieu de décès trop long refusé', assertFails(setDoc(doc(editor, 'people/p6'), { ...person('ue'), deathPlace: 'x'.repeat(201) })));
 await t('autres prénoms acceptés', assertSucceeds(setDoc(doc(editor, 'people/p7'), { ...person('ue'), middleNames: 'Pierre Daniel' })));

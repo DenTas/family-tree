@@ -288,7 +288,7 @@ function createTreeView(viewport, opts) {
   function render() {
     const people = opts.people();
     const fields = opts.fields();
-    const cardH = 16 + (fields.has('photo') ? 76 : 0) + 36 + ['years', 'birth', 'place', 'deathPlace', 'age'].filter((f) => fields.has(f)).length * 17;
+    const cardH = 16 + (fields.has('photo') ? 76 : 0) + 36 + ['years', 'birth', 'place', 'deathPlace', 'age', 'job'].filter((f) => fields.has(f)).length * 17;
     layout = computeLayout(people, opts.depth(), opts.mode(), cardH);
     world.style.setProperty('--card-w', `${CARD_W}px`);
     world.style.setProperty('--card-h', `${cardH}px`);
