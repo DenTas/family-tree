@@ -36,8 +36,12 @@ Le mode est choisi dans `config.js` : `firebase: null` = local ; une configurati
   - informations affichées sur les cartes : photo, drapeau, croix † des personnes décédées (dans le coin de la carte),
     années, date et lieu de naissance, lieu de décès, âge, métier.
   Ces réglages sont mémorisés sur chaque téléphone.
-- **Ma fiche** : sur sa propre fiche, « ☆ C'est moi ». L'application s'ouvre alors sur l'arbre centré sur cette personne
-  (réglage propre à chaque téléphone ; toucher « ★ Ma fiche » pour l'annuler).
+- **Ma fiche** : l'application s'ouvre sur l'arbre centré sur la fiche de la personne connectée.
+  En mode partagé, à la première connexion, l'application devine la fiche d'après le nom du compte Google
+  ou l'adresse e-mail (ex. `denis.martin@…` → Denis Martin, si une seule fiche correspond) et demande confirmation ;
+  sinon elle propose de choisir parmi les fiches de personnes qui peuvent être en vie (ni décédées, ni nées — ou estimées
+  nées d'après leurs proches — il y a plus de 105 ans). Le choix est enregistré sur le compte : il vaut sur tous les appareils.
+  On peut le changer avec « ☆ C'est moi » / « ★ Ma fiche » sur une fiche. En mode local, le réglage est propre au téléphone.
 - **Couples** : dans le formulaire, chaque conjoint a une case « séparés ». Dans l'arbre : trait plein vert =
   en couple ; trait gris avec † = union terminée par un décès (déduit automatiquement) ; pointillés = séparés ;
   pointillés fins gris = parents d'un enfant sans être conjoints. À partir du 3e conjoint, le trait passe

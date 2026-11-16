@@ -11,7 +11,7 @@ const {
 } = await import(`${SDK}/firebase-auth.js`);
 const {
   initializeFirestore, connectFirestoreEmulator, persistentLocalCache, persistentMultipleTabManager,
-  collection, doc, onSnapshot, writeBatch, setDoc, getDoc, deleteDoc, serverTimestamp, query, orderBy, limit,
+  collection, doc, onSnapshot, writeBatch, setDoc, getDoc, deleteDoc, updateDoc, serverTimestamp, query, orderBy, limit,
 } = await import(`${SDK}/firebase-firestore.js`);
 
 const EMAIL_KEY = 'arbre-familial:email-connexion';
@@ -24,7 +24,8 @@ const unsubs = [];
 
 /**
  * Démarre la connexion. Les fonctions de `on` sont appelées à chaque changement :
- *   on.user(user|null), on.role(role|null), on.people(list), on.error(message)
+ *   on.user(user|null), on.role(role|null, personId, fromCache), on.people(list), on.error(message)
+ * personId = « ma fiche » enregistrée sur le compte ('' si aucune).
  */
 export async function start(config, on) {
   const app = initializeApp(config.firebase);
@@ -54,7 +55,7 @@ export async function start(config, on) {
         doc(db, 'members', u.email.toLowerCase()),
         (snap) => {
           const role = snap.exists() ? snap.data().role : null;
-          on.role(role);
+          on.role(role, (snap.exists() && snap.data().personId) || '', snap.metadata.fromCache);
           // Pas encore membre (réponse du serveur, pas du cache) : on laisse une demande d'accès
           // que l'administrateur verra dans « Membres et droits d'accès ».
           if (!role && !snap.metadata.fromCache) requestAccess(u);
@@ -237,8 +238,18 @@ export function watchMembers(cb, onError) {
 export async function setMember(email, role) {
   try {
     const id = email.trim().toLowerCase();
-    await setDoc(doc(db, 'members', id), { role, addedBy: user.email });
+    // merge : on garde la fiche que le membre a choisie (« c'est moi »).
+    await setDoc(doc(db, 'members', id), { role, addedBy: user.email }, { merge: true });
     removeRequest(id); // la demande éventuelle est traitée
+  } catch (e) {
+    throw new Error(dbMessage(e));
+  }
+}
+
+/** « Ma fiche » : chaque membre peut indiquer quelle fiche de l'arbre le représente. */
+export async function setMyPerson(personId) {
+  try {
+    await updateDoc(doc(db, 'members', user.email.toLowerCase()), { personId });
   } catch (e) {
     throw new Error(dbMessage(e));
   }

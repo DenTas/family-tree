@@ -468,14 +468,31 @@ const savePrefs = () => {
 let treeRootId = '';
 let treeView = null;
 
-// « Ma fiche » : la personne que l'utilisateur de ce téléphone a désignée comme lui-même.
-// L'application s'ouvre sur l'arbre centré sur elle.
+// « Ma fiche » : la personne de l'arbre qui représente l'utilisateur. L'application s'ouvre
+// sur l'arbre centré sur elle. Mode partagé : enregistrée sur le compte (fiche membre), donc
+// valable sur tous ses appareils ; copie locale pour l'ouverture hors ligne. Mode local : ce téléphone.
 const ME_KEY = 'arbre-familial:moi';
 let meId = loadJson(ME_KEY, '');
-function setMe(id) {
-  meId = meId === id ? '' : id;
+let treeRootAuto = true; // la personne centrale n'a pas encore été choisie par l'utilisateur
+
+function applyMe(id) {
+  meId = id || '';
   try { localStorage.setItem(ME_KEY, JSON.stringify(meId)); } catch { /* non mémorisé */ }
-  toast(meId ? 'Fiche mémorisée : l’application s’ouvrira sur elle' : 'Ce n’est plus votre fiche de départ');
+  if (meId && treeRootAuto && byId(meId)) {
+    treeRootId = meId;
+    // Ouverture de l'application (aucune page demandée) : on va sur l'arbre centré sur « ma fiche ».
+    if (!location.hash.replace(/^#\/?/, '')) {
+      history.replaceState(null, '', '#/arbre');
+      route(true);
+    } else if (document.body.dataset.view === 'tree') renderTree();
+  }
+}
+
+function setMe(id, { quiet = false } = {}) {
+  const next = meId === id ? '' : id;
+  applyMe(next);
+  if (cloud) cloud.setMyPerson(next).catch((e) => toast(e.message));
+  if (!quiet) toast(next ? 'C’est noté : l’application s’ouvrira sur votre fiche' : 'Ce n’est plus votre fiche de départ');
   route(true);
 }
 
@@ -511,6 +528,7 @@ function initTree() {
     afterRender: hydratePhotos,
     onFocus: (id) => {
       treeRootId = id;
+      treeRootAuto = false;
       $('#treeRoot').value = id;
       treeView.show(id);
       updateTreeInfo();
@@ -554,6 +572,7 @@ function initTree() {
     if (a === 'center') treeView.center();
   });
   $('#treeRoot').addEventListener('change', (e) => {
+    treeRootAuto = false;
     treeView.show((treeRootId = e.target.value));
     updateTreeInfo();
   });
@@ -1045,7 +1064,7 @@ document.addEventListener('click', (e) => {
       fatherId: parent.sex === 'F' ? other : parent.id,
       motherId: parent.sex === 'F' ? parent.id : other,
     });
-  } else if (ds.showTree) { treeRootId = ds.showTree; go('#/arbre'); }
+  } else if (ds.showTree) { treeRootId = ds.showTree; treeRootAuto = false; go('#/arbre'); }
   else if (ds.me) setMe(ds.me);
   else if (ds.delete) deletePerson(ds.delete);
   else if ('back' in ds) history.length > 1 ? history.back() : go('#/liste');
@@ -1155,9 +1174,14 @@ async function startShared() {
       renderAccount();
       route();
     },
-    role(r) {
+    role(r, personId, fromCache) {
       role = ROLE_LABELS[r] ? r : null;
       authState = role ? 'ok' : 'no-access';
+      if (role) {
+        applyMe(personId);
+        memberLoaded = memberLoaded || !fromCache;
+        askWhoAmI();
+      }
       watchRequestsIfAdmin();
       renderAccount();
       route(true);
@@ -1165,6 +1189,8 @@ async function startShared() {
     people(list) {
       people = list.map(normalize);
       if (!dialog.open) refresh();
+      if (meId && treeRootAuto && byId(meId) && treeRootId !== meId) applyMe(meId);
+      askWhoAmI();
     },
     error(msg) {
       authError = msg;
@@ -1178,6 +1204,115 @@ async function startShared() {
 function refresh() {
   if (!$('#view-history').classList.contains('active')) route(true);
 }
+
+/* ----------------- Mode partagé : « qui êtes-vous ? » ------------------- */
+// À la première connexion, on propose à la personne de dire quelle fiche la représente :
+// d'abord une fiche devinée d'après le nom du compte Google (ou l'adresse e-mail), à confirmer ;
+// sinon un choix parmi les fiches de personnes qui peuvent être en vie.
+
+let memberLoaded = false; // fiche membre lue sur le serveur (et pas seulement dans le cache)
+let sessionAsked = false; // « plus tard » : on ne redemande pas avant la prochaine ouverture
+const ASKED_KEY = 'arbre-familial:qui-demande';
+const MAX_AGE = 105;
+
+/** Année de naissance, ou estimée d'après la famille proche (≈ 25 ans par génération). */
+function estimatedBirthYear(p) {
+  if (p.birthDate) return yearNum(p.birthDate);
+  const est = [
+    ...parentsOf(p).filter((x) => x.birthDate).map((x) => yearNum(x.birthDate) + 25),
+    ...childrenOf(p.id).filter((x) => x.birthDate).map((x) => yearNum(x.birthDate) - 25),
+    ...spousesOf(p).filter((x) => x.birthDate).map((x) => yearNum(x.birthDate)),
+    ...siblingsOf(p).filter((x) => x.birthDate).map((x) => yearNum(x.birthDate)),
+  ];
+  return est.length ? Math.round(est.reduce((a, b) => a + b, 0) / est.length) : 0;
+}
+
+/** Peut être en vie : pas décédé·e, et pas née (ou estimée née) il y a plus de 105 ans. */
+function maybeAlive(p) {
+  if (isDeceased(p)) return false;
+  const y = estimatedBirthYear(p);
+  return !y || y > new Date().getFullYear() - MAX_AGE;
+}
+
+/** Fiche correspondant au nom du compte Google, sinon à l'adresse e-mail (ex. denis.martin@…), si une seule correspond. */
+function guessMe(candidates) {
+  const sources = [account?.displayName || '', (account?.email || '').split('@')[0].replace(/[._+\-\d]+/g, ' ')];
+  for (const src of sources) {
+    const words = fold(src).split(/\s+/).filter((w) => w.length > 1);
+    if (words.length < 2) continue;
+    const compact = words.join('');
+    const found = candidates.filter((p) => {
+      const first = fold(p.firstName).split(/[\s-]+/)[0];
+      const last = fold(p.lastName).replace(/[\s'-]+/g, '');
+      return first && last && words.includes(first) && compact.includes(last);
+    });
+    if (found.length === 1) return found[0];
+  }
+  return null;
+}
+
+function askedKey() { return `${ASKED_KEY}:${(account?.email || '').toLowerCase()}`; }
+
+function askWhoAmI() {
+  if (!SHARED || !role || !memberLoaded || meId || !people.length || meDialog.open) return;
+  if (sessionAsked || loadJson(askedKey(), false)) return; // « plus tard » (cette fois-ci) ou « pas dans l'arbre »
+  const candidates = people.filter(maybeAlive);
+  const guess = guessMe(candidates);
+  renderWhoAmI(guess, candidates);
+  meDialog.showModal();
+}
+
+const meDialog = $('#meDialog');
+
+function renderWhoAmI(guess, candidates) {
+  const label = (p) => [year(p.birthDate), p.birthPlace].filter(Boolean).join(', ');
+  if (guess) {
+    $('#meBox').innerHTML = `
+      <h2>Bienvenue !</h2>
+      <p>Êtes-vous <strong>${esc(completeName(guess))}</strong>${label(guess) ? ` <span class="muted">(${esc(label(guess))})</span>` : ''} ?</p>
+      <p class="muted small">L’application s’ouvrira sur votre fiche, sur tous vos appareils.</p>
+      <div class="form-actions">
+        <button class="btn" data-me-choose>Non, choisir</button>
+        <button class="btn primary" data-me-pick="${esc(guess.id)}">Oui, c’est moi</button>
+      </div>`;
+    return;
+  }
+  $('#meBox').innerHTML = `
+    <h2>Qui êtes-vous dans l’arbre ?</h2>
+    <p class="muted small">Choisissez votre fiche : l’application s’ouvrira sur elle, sur tous vos appareils.
+      Seules les personnes qui peuvent être en vie sont proposées.</p>
+    <select id="meSelect" aria-label="Votre fiche"></select>
+    <div class="form-actions">
+      <button class="btn primary" data-me-pick="">Valider</button>
+    </div>
+    <div class="form-actions">
+      <button class="btn" data-me-skip="later">Plus tard</button>
+      <button class="btn" data-me-skip="never">Je ne suis pas dans l’arbre</button>
+    </div>
+    <p class="muted small">Vous pourrez aussi le faire plus tard avec « ☆ C’est moi » sur votre fiche.</p>`;
+  fillSelect($('#meSelect'), candidates, [], '— choisir —');
+}
+
+meDialog.addEventListener('click', (e) => {
+  const ds = e.target.closest('button')?.dataset;
+  if (!ds) return;
+  if ('meChoose' in ds) renderWhoAmI(null, people.filter(maybeAlive));
+  else if ('mePick' in ds) {
+    const id = ds.mePick || $('#meSelect')?.value;
+    if (!id) return toast('Choisissez votre fiche dans la liste.');
+    meDialog.close();
+    treeRootAuto = true;
+    setMe(id, { quiet: true });
+    toast('Merci ! L’application s’ouvrira sur votre fiche.');
+    go('#/arbre');
+  } else if (ds.meSkip) {
+    // « Plus tard » : on redemandera à la prochaine ouverture ; « pas dans l'arbre » : plus sur ce téléphone.
+    if (ds.meSkip === 'never') try { localStorage.setItem(askedKey(), 'true'); } catch { /* */ }
+    else sessionAsked = true;
+    meDialog.close();
+  }
+});
+meDialog.addEventListener('cancel', () => { sessionAsked = true; });
 
 /* ---------------------- Mode partagé : historique ----------------------- */
 

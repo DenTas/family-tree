@@ -57,6 +57,18 @@ await t('admin : rôle inconnu refusé', assertFails(setDoc(doc(admin, 'members/
 await t('admin ne se retire pas', assertFails(deleteDoc(doc(admin, 'members/admin@x.fr'))));
 await t('admin ne se rétrograde pas', assertFails(setDoc(doc(admin, 'members/admin@x.fr'), { role: 'viewer' })));
 await t('admin retire un membre', assertSucceeds(deleteDoc(doc(admin, 'members/new@x.fr'))));
+// « Ma fiche » : chaque membre peut indiquer sa fiche, et seulement cela.
+await t('membre indique sa fiche', assertSucceeds(updateDoc(doc(viewer, 'members/viewer@x.fr'), { personId: 'p1' })));
+await t('membre change de fiche', assertSucceeds(updateDoc(doc(viewer, 'members/viewer@x.fr'), { personId: 'p2' })));
+await t('membre ne change pas son rôle', assertFails(updateDoc(doc(viewer, 'members/viewer@x.fr'), { role: 'admin' })));
+await t('membre ne change pas son rôle avec sa fiche', assertFails(updateDoc(doc(viewer, 'members/viewer@x.fr'), { personId: 'p1', role: 'editor' })));
+await t('membre n’indique pas la fiche d’un autre', assertFails(updateDoc(doc(viewer, 'members/editor@x.fr'), { personId: 'p1' })));
+await t('identifiant de fiche trop long refusé', assertFails(updateDoc(doc(viewer, 'members/viewer@x.fr'), { personId: 'x'.repeat(65) })));
+await t('non-membre ne se crée pas de fiche membre', assertFails(setDoc(doc(stranger, 'members/stranger@x.fr'), { personId: 'p1' })));
+await t('e-mail non vérifié : pas de fiche', assertFails(updateDoc(doc(unverified, 'members/editor@x.fr'), { personId: 'p1' })));
+await t('admin change le rôle en gardant la fiche (merge)', assertSucceeds(setDoc(doc(admin, 'members/viewer@x.fr'), { role: 'editor', addedBy: 'admin@x.fr' }, { merge: true })));
+await t('admin : champ inconnu refusé', assertFails(setDoc(doc(admin, 'members/viewer@x.fr'), { role: 'viewer', foo: 1 }, { merge: true })));
+await t('admin remet lecture seule', assertSucceeds(setDoc(doc(admin, 'members/viewer@x.fr'), { role: 'viewer' }, { merge: true })));
 await t('écriture groupée de 200 fiches + historique', (async () => {
   const b = writeBatch(editor);
   for (let i = 0; i < 200; i++) b.set(doc(editor, 'people/bulk' + i), person('ue'));

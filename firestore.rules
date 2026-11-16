@@ -100,14 +100,23 @@ service cloud.firestore {
     }
 
     match /members/{email} {
+      function isMe() { return signedIn() && email == request.auth.token.email.lower(); }
+      function validMember(d) {
+        return d.keys().hasOnly(['role', 'addedBy', 'personId'])
+          && d.role in ['viewer', 'editor', 'admin']
+          && (!('personId' in d) || isText(d.personId, 64));
+      }
       // Chacun peut lire sa propre fiche (pour connaître son rôle) ; l'administrateur voit tout.
-      allow read: if isAdmin() || (signedIn() && email == request.auth.token.email.lower());
+      allow read: if isAdmin() || isMe();
       allow create, update: if isAdmin()
         && email == email.lower()
-        && request.resource.data.keys().hasOnly(['role', 'addedBy'])
-        && request.resource.data.role in ['viewer', 'editor', 'admin']
+        && validMember(request.resource.data)
         // L'administrateur ne peut pas se retirer ses propres droits (pour ne pas perdre l'accès).
         && (email != request.auth.token.email.lower() || request.resource.data.role == 'admin');
+      // Chaque membre peut indiquer quelle fiche de l'arbre le représente (« c'est moi »), et rien d'autre.
+      allow update: if isMe()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['personId'])
+        && isText(request.resource.data.personId, 64);
       allow delete: if isAdmin() && email != request.auth.token.email.lower();
     }
   }
