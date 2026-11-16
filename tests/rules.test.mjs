@@ -113,6 +113,18 @@ await t('non-membre ne lit pas les demandes', assertFails(getDoc(doc(stranger, '
 await t('éditeur ne lit pas les demandes', assertFails(getDocs(collection(editor, 'requests'))));
 await t('admin lit les demandes', assertSucceeds(getDocs(collection(admin, 'requests'))));
 await t('admin supprime une demande', assertSucceeds(deleteDoc(doc(admin, 'requests/stranger@x.fr'))));
+const pres = (name = 'Denis', personId = 'p1') => ({ name, personId, at: serverTimestamp() });
+await t('lecteur signale sa présence', assertSucceeds(setDoc(doc(viewer, 'presence/uv'), pres())));
+await t('lecteur met à jour sa présence', assertSucceeds(setDoc(doc(viewer, 'presence/uv'), pres('Denis T.', ''))));
+await t('éditeur voit les présences', assertSucceeds(getDocs(collection(editor, 'presence'))));
+await t('présence au nom d’un autre refusée', assertFails(setDoc(doc(viewer, 'presence/ue'), pres())));
+await t('présence avec e-mail refusée', assertFails(setDoc(doc(viewer, 'presence/uv'), { ...pres(), email: 'viewer@x.fr' })));
+await t('présence avec heure inventée refusée', assertFails(setDoc(doc(viewer, 'presence/uv'), { ...pres(), at: new Date(2100, 0, 1) })));
+await t('présence : nom trop long refusé', assertFails(setDoc(doc(viewer, 'presence/uv'), pres('x'.repeat(201)))));
+await t('non-membre ne signale pas sa présence', assertFails(setDoc(doc(stranger, 'presence/us'), pres())));
+await t('non-membre ne voit pas les présences', assertFails(getDocs(collection(stranger, 'presence'))));
+await t('on n’efface pas la présence d’un autre', assertFails(deleteDoc(doc(editor, 'presence/uv'))));
+await t('on efface sa propre présence', assertSucceeds(deleteDoc(doc(viewer, 'presence/uv'))));
 console.log(`\n${ok} réussis, ${ko} échoués`);
 await env.cleanup();
 process.exit(ko ? 1 : 0);

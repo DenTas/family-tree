@@ -492,6 +492,7 @@ function setMe(id, { quiet = false } = {}) {
   const next = meId === id ? '' : id;
   applyMe(next);
   if (cloud) cloud.setMyPerson(next).catch((e) => toast(e.message));
+  if (cloud) updatePresence();
   if (!quiet) toast(next ? 'C’est noté : l’application s’ouvrira sur votre fiche' : 'Ce n’est plus votre fiche de départ');
   route(true);
 }
@@ -1169,7 +1170,7 @@ async function startShared() {
   await cloud.start(CONFIG, {
     user(u) {
       account = u;
-      if (!u) { role = null; people = []; authState = 'signed-out'; }
+      if (!u) { role = null; people = []; authState = 'signed-out'; updatePresence(); }
       else authState = 'loading';
       renderAccount();
       route();
@@ -1183,6 +1184,7 @@ async function startShared() {
         askWhoAmI();
       }
       watchRequestsIfAdmin();
+      updatePresence();
       renderAccount();
       route(true);
     },
@@ -1191,6 +1193,8 @@ async function startShared() {
       if (!dialog.open) refresh();
       if (meId && treeRootAuto && byId(meId) && treeRootId !== meId) applyMe(meId);
       askWhoAmI();
+      updatePresence();
+      renderOnline();
     },
     error(msg) {
       authError = msg;
@@ -1458,6 +1462,74 @@ function renderMembers(list) {
 }
 
 $('#closeMembersBtn').addEventListener('click', () => $('#membersDialog').close());
+
+/* ------------------ Mode partagé : personnes connectées ----------------- */
+// Chaque membre connecté signale sa présence (voir cloud.js). On affiche dans l'en-tête le nombre
+// de personnes qui ont l'application ouverte ; un appui ouvre la liste.
+
+let presence = [];
+let presenceUnsub = null;
+let presenceTick = null;
+
+/** Nom montré aux autres : celui de « ma fiche », sinon celui du compte Google. */
+function presenceName() {
+  const me = meId && byId(meId);
+  return me ? fullName(me) : account?.displayName || '';
+}
+
+function updatePresence() {
+  if (!cloud) return;
+  if (role && account) {
+    cloud.startPresence({ name: presenceName().slice(0, 200), personId: meId && byId(meId) ? meId : '' });
+    if (!presenceUnsub) {
+      presenceUnsub = cloud.watchPresence((list) => { presence = list; renderOnline(); });
+      presenceTick = setInterval(renderOnline, 30 * 1000); // fait disparaître ceux qui sont partis
+    }
+  } else if (presenceUnsub) {
+    cloud.stopPresence();
+    presenceUnsub();
+    clearInterval(presenceTick);
+    presenceUnsub = presenceTick = null;
+    presence = [];
+    renderOnline();
+  }
+}
+
+function onlineNow() {
+  const since = Date.now() - cloud.PRESENCE_TTL;
+  const list = presence.filter((x) => x.me || x.at.getTime() > since);
+  if (role && account && !list.some((x) => x.me)) list.push({ uid: account.uid, name: presenceName(), personId: meId, me: true });
+  const label = (x) => (x.personId && byId(x.personId) ? fullName(byId(x.personId)) : x.name) || 'Membre de la famille';
+  return list
+    .map((x) => ({ ...x, label: label(x) }))
+    .sort((a, b) => (b.me - a.me) || a.label.localeCompare(b.label, 'fr'));
+}
+
+function renderOnline() {
+  const btn = $('#onlineBtn');
+  if (!cloud || !role || !account) { btn.hidden = true; return; }
+  const list = onlineNow();
+  const others = list.length - 1;
+  btn.hidden = false;
+  $('#onlineCount').textContent = list.length;
+  btn.setAttribute('aria-label', others ? `${list.length} personnes connectées` : 'Vous êtes seul·e connecté·e');
+  btn.title = others ? `${list.length} connectés : ${list.map((x) => x.label).join(', ')}` : 'Personne d’autre n’est connecté';
+  $('#onlineList').innerHTML = list
+    .map((x) => `
+      <li>
+        <span class="online-dot" aria-hidden="true"></span>
+        <span class="online-name">${esc(x.label)}${x.me ? ' <span class="muted">(vous)</span>' : ''}</span>
+        ${x.personId && byId(x.personId) ? `<button class="chip" data-online-goto="${esc(x.personId)}">Fiche</button>` : ''}
+      </li>`)
+    .join('') + (others ? '' : '<li class="muted">Personne d’autre pour l’instant.</li>');
+}
+
+$('#onlineBtn').addEventListener('click', () => { renderOnline(); $('#onlineDialog').showModal(); });
+$('#closeOnlineBtn').addEventListener('click', () => $('#onlineDialog').close());
+$('#onlineList').addEventListener('click', (e) => {
+  const id = e.target.closest('[data-online-goto]')?.dataset.onlineGoto;
+  if (id) { $('#onlineDialog').close(); go(`#/personne/${id}`); }
+});
 
 /* --------------------- Carnet d'adresses du téléphone --------------------- */
 // API « Contact Picker » : Chrome sur Android uniquement. Ailleurs, les boutons restent cachés.

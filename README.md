@@ -59,6 +59,11 @@ Mode partagé en plus :
   (« Lecture seule » ou « Peut modifier »). L'arbre s'ouvre alors tout seul chez la personne.
 - **Carnet d'adresses** (Chrome sur Android uniquement) : « 📇 Choisir dans mes contacts » préremplit l'adresse
   d'un membre ou le nom d'une nouvelle personne. Seul le contact choisi est lu.
+- **Personnes connectées** : une pastille verte dans l'en-tête indique combien de membres ont l'application
+  ouverte (vous compris) ; en la touchant, on voit leurs noms (celui de leur fiche « ma fiche », sinon celui de
+  leur compte Google) avec un lien vers leur fiche. Chaque appareil signale sa présence toutes les minutes tant que
+  la page est visible ; une personne disparaît de la liste quand elle se déconnecte ou passe l'application en
+  arrière-plan, sinon au plus tard ≈ 3 minutes après avoir fermé l'application. Aucune adresse e-mail n'est montrée.
 - **Historique** (menu ⋮ → Historique) : chaque action (ajout, modification, suppression, import) est
   enregistrée avec son auteur, sa date et l'état avant/après. « Annuler cette modification » remet les fiches dans leur état d'avant
   (et devient elle-même une ligne de l'historique). L'historique ne peut être ni modifié ni effacé depuis l'application.

@@ -120,7 +120,10 @@ async function finishEmailLink(on) {
   history.replaceState(null, '', location.pathname);
 }
 
-export const signOut = () => fbSignOut(auth);
+export async function signOut() {
+  await stopPresence();
+  return fbSignOut(auth);
+}
 
 function authMessage(e) {
   const messages = {
@@ -264,4 +267,57 @@ export async function removeMember(email) {
   } catch (e) {
     throw new Error(dbMessage(e));
   }
+}
+
+/* ------------------------- Personnes connectées ------------------------- */
+// Firestore ne signale pas les déconnexions : chaque appareil connecté met à jour sa ligne
+// presence/<uid> toutes les minutes tant que la page est visible. Est « en ligne » celui dont
+// la dernière mise à jour date de moins de PRESENCE_TTL. Aucune adresse e-mail n'y est stockée.
+
+const PRESENCE_EVERY = 60 * 1000;
+export const PRESENCE_TTL = 150 * 1000;
+let presenceInfo = null; // { name, personId } tant que la présence est active
+let presenceTimer = null;
+
+function beat() {
+  if (!presenceInfo || !user || document.visibilityState !== 'visible') return;
+  setDoc(doc(db, 'presence', user.uid), { ...presenceInfo, at: serverTimestamp() }).catch(() => {});
+}
+
+function onVisibility() {
+  if (document.visibilityState === 'visible') beat();
+  else if (user) deleteDoc(doc(db, 'presence', user.uid)).catch(() => {}); // départ : au mieux
+}
+
+/** Signale sa présence (à rappeler quand « ma fiche » change). */
+export function startPresence(info) {
+  const changed = JSON.stringify(info) !== JSON.stringify(presenceInfo);
+  presenceInfo = info;
+  if (!presenceTimer) {
+    presenceTimer = setInterval(beat, PRESENCE_EVERY);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', onVisibility);
+    beat();
+  } else if (changed) beat();
+}
+
+export async function stopPresence() {
+  if (presenceTimer) {
+    clearInterval(presenceTimer);
+    document.removeEventListener('visibilitychange', onVisibility);
+    window.removeEventListener('pagehide', onVisibility);
+  }
+  presenceTimer = null;
+  presenceInfo = null;
+  if (user) await deleteDoc(doc(db, 'presence', user.uid)).catch(() => {});
+}
+
+/** Liste des présences : [{ uid, name, personId, at: Date }] (les anciennes sont filtrées par l'appelant). */
+export function watchPresence(cb) {
+  return onSnapshot(collection(db, 'presence'), (s) =>
+    cb(s.docs.map((d) => {
+      const data = d.data({ serverTimestamps: 'estimate' });
+      return { uid: d.id, name: data.name || '', personId: data.personId || '', at: data.at?.toDate() || new Date(0), me: d.id === user?.uid };
+    })),
+  () => cb([]));
 }

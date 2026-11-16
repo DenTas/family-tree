@@ -146,6 +146,18 @@ label.check { display: flex; align-items: center; gap: 8px; color: var(--text); 
 label.check input { width: auto; margin: 0; }
 .dot { position: absolute; top: 8px; right: 8px; width: 10px; height: 10px; border-radius: 50%; background: #e5484d; }
 #menuBtn { position: relative; }
+.top-actions { display: flex; align-items: center; gap: 4px; }
+.online-btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px;
+  border: 1px solid rgba(255,255,255,.5); border-radius: 999px; background: rgba(255,255,255,.12);
+  color: #fff; font: inherit; font-size: .9rem; cursor: pointer;
+}
+.online-dot { width: 9px; height: 9px; border-radius: 50%; background: #3ddc84; box-shadow: 0 0 0 2px rgba(61,220,132,.3); }
+.online-list { list-style: none; margin: 0 0 10px; padding: 0; }
+.online-list li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.online-list li:last-child { border-bottom: 0; }
+.online-list .online-name { flex: 1; }
+.online-list .chip { padding: 2px 10px; }
 .badge { display: inline-block; min-width: 20px; padding: 1px 6px; border-radius: 999px; background: #e5484d; color: #fff; font-size: .8rem; margin-left: 6px; }
 .requests { border: 1px solid var(--accent); background: var(--accent-soft); border-radius: 12px; padding: 10px 12px; margin-bottom: 14px; }
 .requests h3, .members-title { margin: 0 0 6px; font-size: 1rem; }
