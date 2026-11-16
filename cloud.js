@@ -53,6 +53,9 @@ export async function start(config, on) {
     unsubs.push(
       onSnapshot(
         doc(db, 'members', u.email.toLowerCase()),
+        // includeMetadataChanges : être prévenu aussi quand le serveur confirme une fiche déjà
+        // en cache (sinon, avec le cache hors ligne, on ne sait jamais qu'elle vient du serveur).
+        { includeMetadataChanges: true },
         (snap) => {
           const role = snap.exists() ? snap.data().role : null;
           on.role(role, (snap.exists() && snap.data().personId) || '', snap.metadata.fromCache);
