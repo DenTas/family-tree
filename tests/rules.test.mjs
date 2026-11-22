@@ -14,11 +14,13 @@ await env.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, 'members/admin@x.fr'), { role: 'admin' });
   await setDoc(doc(db, 'members/editor@x.fr'), { role: 'editor' });
   await setDoc(doc(db, 'members/viewer@x.fr'), { role: 'viewer' });
+  await setDoc(doc(db, 'members/family@x.fr'), { role: 'family' });
   await setDoc(doc(db, 'people/p1'), { firstName: 'A', lastName: 'B' });
 });
 const as = (uid, email, verified = true) => env.authenticatedContext(uid, { email, email_verified: verified }).firestore();
 const admin = as('ua', 'Admin@x.fr'), editor = as('ue', 'editor@x.fr'), viewer = as('uv', 'viewer@x.fr');
 const stranger = as('us', 'stranger@x.fr'), unverified = as('uu', 'editor@x.fr', false);
+const family = as('uf', 'family@x.fr');
 const anon = env.unauthenticatedContext().firestore();
 
 const person = (uid) => ({ firstName: 'Jean', lastName: 'Martin', sex: 'M', birthDate: '1930', birthPlace: '', deathDate: '',
@@ -68,6 +70,18 @@ await t('non-membre ne se crée pas de fiche membre', assertFails(setDoc(doc(str
 await t('e-mail non vérifié : pas de fiche', assertFails(updateDoc(doc(unverified, 'members/editor@x.fr'), { personId: 'p1' })));
 await t('admin change le rôle en gardant la fiche (merge)', assertSucceeds(setDoc(doc(admin, 'members/viewer@x.fr'), { role: 'editor', addedBy: 'admin@x.fr' }, { merge: true })));
 await t('admin : champ inconnu refusé', assertFails(setDoc(doc(admin, 'members/viewer@x.fr'), { role: 'viewer', foo: 1 }, { merge: true })));
+// Rôle « sa lignée » (family)
+await t('lignée : lit les fiches', assertSucceeds(getDoc(doc(family, 'people/p1'))));
+await t('lignée : écrit une fiche + historique', assertSucceeds((() => { const bt = writeBatch(family); bt.set(doc(family, 'people/pf1'), person('uf')); bt.set(doc(family, 'history/hf1'), hist('uf', 'family@x.fr')); return bt.commit(); })()));
+await t('lignée : ne supprime pas de fiche', assertFails(deleteDoc(doc(family, 'people/pf1'))));
+await t('lignée : ajoute une photo', assertSucceeds(setDoc(doc(family, 'photos/phf1'), { data: 'data:image/jpeg;base64,AAAA', personId: 'pf1', by: 'uf', at: serverTimestamp() })));
+await t('lignée : fiche invalide refusée', assertFails(setDoc(doc(family, 'people/pf2'), { ...person('uf'), sex: 'X' })));
+await t('lignée : choisit sa fiche', assertSucceeds(updateDoc(doc(family, 'members/family@x.fr'), { personId: 'pf1' })));
+await t('lignée : ne change plus sa fiche ensuite', assertFails(updateDoc(doc(family, 'members/family@x.fr'), { personId: 'p1' })));
+await t('lignée : ne gère pas les membres', assertFails(setDoc(doc(family, 'members/new2@x.fr'), { role: 'viewer' })));
+await t('admin efface la fiche d’un membre « lignée »', assertSucceeds(setDoc(doc(admin, 'members/family@x.fr'), { personId: '' }, { merge: true })));
+await t('lignée : rechoisit sa fiche après effacement', assertSucceeds(updateDoc(doc(family, 'members/family@x.fr'), { personId: 'p1' })));
+await t('admin attribue le rôle « lignée »', assertSucceeds(setDoc(doc(admin, 'members/viewer@x.fr'), { role: 'family' }, { merge: true })));
 await t('admin remet lecture seule', assertSucceeds(setDoc(doc(admin, 'members/viewer@x.fr'), { role: 'viewer' }, { merge: true })));
 await t('écriture groupée de 200 fiches + historique', (async () => {
   const b = writeBatch(editor);

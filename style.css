@@ -274,6 +274,7 @@ input[type="range"]:focus { outline: none; }
 
 /* Mode partagé : affichage selon les droits */
 body:not(.can-edit) .edit-only,
+body:not(.can-edit-all) .edit-all-only,
 body:not(.is-admin) .admin-only,
 body:not(.shared) .shared-only,
 body.shared .local-only,
@@ -295,3 +296,9 @@ body.locked #menuBtn { display: none !important; }
 .add-member { display: grid; grid-template-columns: 1fr auto; gap: 6px; margin-bottom: 12px; }
 .add-member input { grid-column: 1 / -1; margin: 0; }
 .add-member select { margin: 0; }
+
+/* Photo dans le formulaire */
+.form-photo { display: flex; align-items: center; gap: 12px; margin: 4px 0 12px; }
+.form-photo .avatar { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; flex: none; }
+.form-photo-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.link-btn { background: none; border: 0; padding: 0 4px; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }

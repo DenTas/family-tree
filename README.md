@@ -11,7 +11,7 @@ sur l'écran d'accueil (PWA).
 | Données | Sur le téléphone seulement | Dans une base en ligne commune (Firebase) |
 | Partage | Export / import de fichiers | Tout le monde voit le même arbre, mis à jour en direct |
 | Connexion | Aucune | Compte Google **ou** lien reçu par e-mail |
-| Droits | — | Lecture seule, Peut modifier, Administrateur |
+| Droits | — | Lecture seule, Modifie sa lignée, Modifie tout, Administrateur |
 | Historique | — | Qui a modifié quoi et quand, avec annulation |
 
 Le mode est choisi dans `config.js` : `firebase: null` = local ; une configuration Firebase = partagé.
@@ -46,14 +46,24 @@ Le mode est choisi dans `config.js` : `firebase: null` = local ; une configurati
   en couple ; trait gris avec † = union terminée par un décès (déduit automatiquement) ; pointillés = séparés ;
   pointillés fins gris = parents d'un enfant sans être conjoints. À partir du 3e conjoint, le trait passe
   sous les cartes ; chaque enfant descend du trait de ses deux parents.
-- **Photos** : sur la fiche d'une personne, « Ajouter une photo » (galerie ou appareil photo).
+- **Photos** : sur la fiche d'une personne ou dans le formulaire, « 🖼️ Choisir une image » (galerie, fichiers) et,
+  sur téléphone et tablette, « 📷 Prendre une photo » (ouvre directement l'appareil photo).
   La photo est recadrée en carré et réduite (≈ 20–40 Ko) pour rester légère.
 - Export **JSON** et **GEDCOM 5.5.1** (format standard des logiciels de généalogie), import JSON avec fusion.
 - Fonctionne hors connexion et s'installe sur l'écran d'accueil (« Ajouter à l'écran d'accueil »).
 
 Mode partagé en plus :
-- **Droits** : chaque membre est ajouté par son adresse e-mail. Par défaut on le met en *Lecture seule* ;
-  l'administrateur peut passer quelqu'un en *Peut modifier* (menu ⋮ → Membres et droits d'accès).
+- **Droits** : chaque membre est ajouté par son adresse e-mail (menu ⋮ → Membres et droits d'accès), avec l'un des rôles :
+  - *Lecture seule* : consulte l'arbre ;
+  - *Modifie sa lignée* : modifie sa propre fiche, celles de ses ancêtres et de ses descendants directs (enfants,
+    petits-enfants…), y ajoute des photos, et peut ajouter des personnes ; ne supprime rien, n'importe pas, n'annule pas.
+    Sa lignée part de « ma fiche », qu'il choisit à sa première connexion ; ensuite seul l'administrateur peut la changer
+    (lien « changer » dans la liste des membres) ;
+  - *Modifie tout* : ajoute, modifie, supprime, importe et annule ;
+  - *Administrateur* : en plus, gère les membres.
+  Limite : les règles du serveur ne peuvent pas parcourir l'arbre pour vérifier une lignée. Pour *Modifie sa lignée*,
+  le serveur garantit qu'il ne supprime rien et ne touche pas aux membres ; la limite à sa lignée est appliquée par
+  l'application. Chaque modification reste dans l'historique, que personne ne peut effacer, et l'administrateur peut l'annuler.
   Une personne connectée mais pas encore ajoutée voit « Accès en attente » et laisse automatiquement une
   **demande d'accès** : l'administrateur voit un point rouge sur le menu ⋮ et accepte la demande en un geste
   (« Lecture seule » ou « Peut modifier »). L'arbre s'ouvre alors tout seul chez la personne.

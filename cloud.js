@@ -258,6 +258,15 @@ export async function setMyPerson(personId) {
   }
 }
 
+/** Administrateur : efface la fiche choisie par un membre (il la choisira à nouveau). */
+export async function resetMemberPerson(email) {
+  try {
+    await setDoc(doc(db, 'members', email), { personId: '' }, { merge: true });
+  } catch (e) {
+    throw new Error(dbMessage(e));
+  }
+}
+
 export async function removeMember(email) {
   try {
     await deleteDoc(doc(db, 'members', email));

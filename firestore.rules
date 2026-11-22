@@ -5,7 +5,9 @@ rules_version = '2';
 //
 // Rôles (fiche members/<email en minuscules>, champ "role") :
 //   viewer : consulte l'arbre et l'historique
-//   editor : peut en plus ajouter, modifier, supprimer et annuler
+//   family : peut en plus ajouter et modifier des fiches (l'application limite les modifications à
+//            sa fiche, ses ancêtres et ses descendants directs ; voir plus bas), sans supprimer ni annuler
+//   editor : peut tout ajouter, modifier, supprimer et annuler
 //   admin  : peut en plus gérer les membres
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -23,6 +25,11 @@ service cloud.firestore {
     function isMember() { return signedIn() && exists(memberPath()); }
     function hasRole(roles) { return isMember() && get(memberPath()).data.role in roles; }
     function canEdit() { return hasRole(['editor', 'admin']); }
+    // Rôle « family » : les règles ne peuvent pas parcourir l'arbre pour vérifier la lignée
+    // (nombre de lectures limité par requête). Le serveur l'autorise donc à écrire des fiches,
+    // l'application le limite à sa lignée, et chaque écriture reste tracée dans l'historique
+    // (que personne ne peut effacer) : l'administrateur voit et peut annuler tout abus.
+    function canWrite() { return hasRole(['family', 'editor', 'admin']); }
     function isAdmin() { return hasRole(['admin']); }
 
     function isText(v, max) { return v is string && v.size() <= max; }
@@ -52,7 +59,7 @@ service cloud.firestore {
 
     match /people/{personId} {
       allow read: if isMember();
-      allow create, update: if canEdit() && validPerson(request.resource.data);
+      allow create, update: if canWrite() && validPerson(request.resource.data);
       allow delete: if canEdit();
     }
 
@@ -60,7 +67,7 @@ service cloud.firestore {
     // Personne (même l'administrateur) ne peut le modifier ou l'effacer depuis l'application.
     match /history/{entryId} {
       allow read: if isMember();
-      allow create: if canEdit()
+      allow create: if canWrite()
         && request.resource.data.keys().hasOnly(['label', 'changes', 'byUid', 'byEmail', 'byName', 'at'])
         && isText(request.resource.data.label, 300)
         && request.resource.data.changes is list
@@ -75,7 +82,7 @@ service cloud.firestore {
     // Photos : jamais modifiées (une nouvelle photo = un nouveau document), petites images uniquement.
     match /photos/{photoId} {
       allow read: if isMember();
-      allow create: if canEdit()
+      allow create: if canWrite()
         && request.resource.data.keys().hasOnly(['data', 'personId', 'by', 'at'])
         && request.resource.data.data is string
         && request.resource.data.data.size() < 300000
@@ -103,7 +110,7 @@ service cloud.firestore {
       function isMe() { return signedIn() && email == request.auth.token.email.lower(); }
       function validMember(d) {
         return d.keys().hasOnly(['role', 'addedBy', 'personId'])
-          && d.role in ['viewer', 'editor', 'admin']
+          && d.role in ['viewer', 'family', 'editor', 'admin']
           && (!('personId' in d) || isText(d.personId, 64));
       }
       // Chacun peut lire sa propre fiche (pour connaître son rôle) ; l'administrateur voit tout.
@@ -114,9 +121,11 @@ service cloud.firestore {
         // L'administrateur ne peut pas se retirer ses propres droits (pour ne pas perdre l'accès).
         && (email != request.auth.token.email.lower() || request.resource.data.role == 'admin');
       // Chaque membre peut indiquer quelle fiche de l'arbre le représente (« c'est moi »), et rien d'autre.
+      // Rôle « family » : cette fiche fixe sa lignée ; une fois choisie, seul l'administrateur peut la changer.
       allow update: if isMe()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['personId'])
-        && isText(request.resource.data.personId, 64);
+        && isText(request.resource.data.personId, 64)
+        && (resource.data.role != 'family' || resource.data.get('personId', '') == '');
       allow delete: if isAdmin() && email != request.auth.token.email.lower();
     }
   }

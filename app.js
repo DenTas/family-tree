@@ -27,7 +27,16 @@ let localPhotos = SHARED ? {} : loadJson(PHOTO_KEY, {}); // mode local : { idPho
 let cloud = null; // module cloud.js en mode partagé
 let account = null; // utilisateur connecté (mode partagé)
 let role = SHARED ? null : 'admin'; // en mode local, on a tous les droits
-const canEdit = () => role === 'editor' || role === 'admin';
+// Droits : viewer = consulter ; family = modifier sa fiche, ses ancêtres et ses descendants directs
+// (« sa lignée », à partir de « ma fiche ») ; editor = tout modifier ; admin = en plus gérer les membres.
+const canWrite = () => ['family', 'editor', 'admin'].includes(role); // peut modifier au moins une fiche
+const canEditAll = () => role === 'editor' || role === 'admin';
+/** Peut modifier cette fiche ? Rôle « family » : sa fiche, ses ancêtres et ses descendants directs. */
+function canEditPerson(id) {
+  if (canEditAll()) return true;
+  if (role !== 'family' || !meId || !id) return false;
+  return id === meId || isAncestor(id, meId) || isAncestor(meId, id);
+}
 
 function loadJson(key, fallback) {
   try {
@@ -311,6 +320,7 @@ function resizePhoto(file, size = 320) {
 
 async function setPhoto(personId, file) {
   const p = byId(personId);
+  if (!p || !canEditPerson(personId)) return;
   let url;
   try {
     url = await resizePhoto(file);
@@ -326,8 +336,19 @@ async function setPhoto(personId, file) {
   route(true);
 }
 
+// Téléphone ou tablette : on propose aussi l'appareil photo (capture), en plus de la galerie.
+const hasCamera = matchMedia('(pointer: coarse)').matches;
+/** Boutons « Prendre une photo » (si écran tactile) et « Choisir une image » ; `attr` = attribut de l'input. */
+function photoButtons(attr, hasPhoto) {
+  return `${hasCamera ? `<label class="btn small-btn">📷 Prendre une photo
+      <input type="file" accept="image/*" capture="environment" ${attr} hidden></label>` : ''}
+    <label class="btn small-btn">🖼️ ${hasPhoto ? 'Changer d’image' : 'Choisir une image'}
+      <input type="file" accept="image/*" ${attr} hidden></label>`;
+}
+
 function removePhoto(personId) {
   const p = byId(personId);
+  if (!p || !canEditPerson(personId)) return;
   if (!confirm(`Retirer la photo de ${fullName(p)} ?`)) return;
   mutate(`Photo retirée : ${fullName(p)}`, () => (p.photo = ''));
   route(true);
@@ -337,7 +358,8 @@ function removePhoto(personId) {
 // L'URL (#/liste, #/arbre, #/personne/<id>) permet au bouton « retour » du téléphone de fonctionner.
 
 function route(keepScroll = false) {
-  document.body.classList.toggle('can-edit', canEdit());
+  document.body.classList.toggle('can-edit', canWrite());
+  document.body.classList.toggle('can-edit-all', canEditAll());
   document.body.classList.toggle('is-admin', role === 'admin');
   document.body.classList.toggle('shared', SHARED);
   // Mode partagé : tant qu'on n'est pas connecté avec un accès, on montre l'écran de connexion.
@@ -410,6 +432,12 @@ function unionNote(p, s) {
   return '';
 }
 
+function meButton(p) {
+  // Rôle « sa lignée » : la fiche choisie fixe ce qu'on peut modifier ; seul l'administrateur peut la changer.
+  if (role === 'family' && meId) return p.id === meId ? '<span class="btn me-on" aria-disabled="true">★ Ma fiche</span>' : '';
+  return `<button class="btn${p.id === meId ? ' me-on' : ''}" data-me="${esc(p.id)}" title="L’application s’ouvrira sur cette fiche">${p.id === meId ? '★ Ma fiche (retirer)' : '☆ C’est moi'}</button>`;
+}
+
 function renderPerson(id) {
   const p = byId(id);
   const facts = [
@@ -426,12 +454,9 @@ function renderPerson(id) {
     <div class="card person-head">
       ${avatarHtml(p, 'avatar big')}
       <h2>${esc(completeName(p))}${deathMark(p)}</h2>
-      <div class="photo-actions edit-only">
-        <label class="btn small-btn">📷 ${p.photo ? 'Changer la photo' : 'Ajouter une photo'}
-          <input type="file" accept="image/*" data-photo-input="${esc(p.id)}" hidden>
-        </label>
+      ${canEditPerson(p.id) ? `<div class="photo-actions">${photoButtons(`data-photo-input="${esc(p.id)}"`, p.photo)}
         ${p.photo ? `<button class="btn small-btn" data-photo-remove="${esc(p.id)}">Retirer</button>` : ''}
-      </div>
+      </div>` : ''}
       ${facts.length ? `<dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
       ${p.notes ? `<p>${esc(p.notes).replace(/\n/g, '<br>')}</p>` : ''}
     </div>
@@ -440,11 +465,11 @@ function renderPerson(id) {
     <div class="card"><h3>Enfants</h3>${chips(childrenOf(p.id))}</div>
     <div class="card"><h3>Frères et sœurs</h3>${chips(siblingsOf(p))}</div>
     <div class="actions">
-      <button class="btn primary edit-only" data-edit="${esc(p.id)}">Modifier</button>
-      <button class="btn edit-only" data-add-child="${esc(p.id)}">+ Ajouter un enfant</button>
+      ${canEditPerson(p.id) ? `<button class="btn primary" data-edit="${esc(p.id)}">Modifier</button>
+      <button class="btn" data-add-child="${esc(p.id)}">+ Ajouter un enfant</button>` : ''}
       <button class="btn" data-show-tree="${esc(p.id)}">Voir dans l’arbre</button>
-      <button class="btn${p.id === meId ? ' me-on' : ''}" data-me="${esc(p.id)}" title="L’application s’ouvrira sur cette fiche, sur ce téléphone">${p.id === meId ? '★ Ma fiche (retirer)' : '☆ C’est moi'}</button>
-      <button class="btn danger edit-only" data-delete="${esc(p.id)}">Supprimer</button>
+      ${meButton(p)}
+      ${canEditAll() ? `<button class="btn danger" data-delete="${esc(p.id)}">Supprimer</button>` : ''}
     </div>`;
   hydratePhotos($('#view-person'));
 }
@@ -630,6 +655,21 @@ const dialog = $('#personDialog');
 const form = $('#personForm');
 
 /** Liste des pays : ceux déjà utilisés dans l'arbre en premier, puis tous par ordre alphabétique. */
+// Photo choisie dans le formulaire : enregistrée après la fiche (il faut son identifiant).
+let formPhotoFile = null;
+function renderFormPhoto(person) {
+  const preview = formPhotoFile
+    ? `<span class="avatar"><img src="${URL.createObjectURL(formPhotoFile)}" alt=""></span>`
+    : person ? avatarHtml(person) : '<span class="avatar">?</span>';
+  $('#formPhoto').innerHTML = `${preview}<span class="form-photo-btns">${photoButtons('data-form-photo', formPhotoFile || person?.photo)}</span>`;
+  if (!formPhotoFile && person) hydratePhotos($('#formPhoto'));
+}
+$('#formPhoto').addEventListener('change', (e) => {
+  if (!('formPhoto' in e.target.dataset) || !e.target.files[0]) return;
+  formPhotoFile = e.target.files[0];
+  renderFormPhoto(byId(form.personId.value));
+});
+
 function fillCountries(selected) {
   const opt = (c) => `<option value="${c}"${c === selected ? ' selected' : ''}>${flag(c)} ${esc(countryName(c))}</option>`;
   const byName = (a, b) => countryName(a).localeCompare(countryName(b), 'fr');
@@ -706,6 +746,7 @@ function fillRelationLists(current = formPerson()) {
 }
 
 function openForm(person = null, preset = {}) {
+  if (person && !canEditPerson(person.id)) return toast('Vous ne pouvez modifier que votre fiche, vos ancêtres et vos descendants.');
   const p = person || normalize({ id: '', ...preset });
   form.reset();
   $('#formError').hidden = true;
@@ -724,6 +765,8 @@ function openForm(person = null, preset = {}) {
   form.deathDate.value = formatDate(p.deathDate);
   form.occupation.value = p.occupation;
   form.notes.value = p.notes;
+  formPhotoFile = null;
+  renderFormPhoto(person);
 
   formSpouses = [...p.spouseIds];
   formSeparated = new Set(p.separatedIds);
@@ -843,6 +886,8 @@ form.addEventListener('submit', (ev) => {
   });
   dialog.close();
   toast(existing ? 'Modifications enregistrées' : 'Personne ajoutée');
+  if (formPhotoFile) setPhoto(id, formPhotoFile);
+  formPhotoFile = null;
   if (location.hash === `#/personne/${id}`) route();
   else go(`#/personne/${id}`);
 });
@@ -872,6 +917,7 @@ dialog.addEventListener('close', () => SHARED && refresh());
 
 function deletePerson(id) {
   const p = byId(id);
+  if (!canEditAll()) return;
   if (!p || !confirm(`Supprimer ${fullName(p)} ? Les liens avec cette personne seront retirés.`)) return;
   mutate(`Suppression de ${fullName(p)}`, () => {
     people = people.filter((o) => o.id !== id);
@@ -1057,6 +1103,7 @@ document.addEventListener('click', (e) => {
   else if (ds.edit) openForm(byId(ds.edit));
   else if (ds.addChild) {
     const parent = byId(ds.addChild);
+    if (!canEditPerson(parent.id)) return;
     const spouse = spousesOf(parent)[0];
     const other = spouse && spousesOf(parent).length === 1 ? spouse.id : '';
     openForm(null, {
@@ -1149,7 +1196,7 @@ function showLoginMsg(msg, isError = false) {
   el.className = isError ? 'error' : 'muted';
 }
 
-const ROLE_LABELS = { viewer: 'Lecture seule', editor: 'Peut modifier', admin: 'Administrateur' };
+const ROLE_LABELS = { viewer: 'Lecture seule', family: 'Modifie sa lignée', editor: 'Modifie tout', admin: 'Administrateur' };
 
 function renderAccount() {
   $('#accountInfo').innerHTML = account
@@ -1345,7 +1392,7 @@ function renderHistory() {
         <div><strong>${esc(h.label)}</strong></div>
         <div class="muted small">${esc(h.byName || h.byEmail)} · ${esc(dateTime(h.at))}</div>
         ${h.changes.length > 1 ? `<div class="muted small">${h.changes.length} fiches concernées</div>` : ''}
-        <button class="btn small-btn edit-only" data-undo="${esc(h.id)}">Annuler cette modification</button>
+        <button class="btn small-btn edit-all-only" data-undo="${esc(h.id)}">Annuler cette modification</button>
       </li>`
         )
         .join('')
@@ -1410,7 +1457,8 @@ function renderRequests() {
         <span class="member-email">${r.name ? `<strong>${esc(r.name)}</strong><br>` : ''}${esc(r.email)}</span>
         <span class="request-actions">
           <button class="btn small-btn" data-grant="viewer" data-email="${esc(r.email)}">Lecture seule</button>
-          <button class="btn small-btn primary" data-grant="editor" data-email="${esc(r.email)}">Peut modifier</button>
+          <button class="btn small-btn" data-grant="family" data-email="${esc(r.email)}">Sa lignée</button>
+          <button class="btn small-btn primary" data-grant="editor" data-email="${esc(r.email)}">Tout</button>
           <button class="icon-btn small" data-refuse="${esc(r.email)}" aria-label="Refuser">✕</button>
         </span>
       </li>`
@@ -1438,6 +1486,14 @@ function openMembers() {
   $('#membersDialog').showModal();
 }
 
+/** Fiche choisie par le membre (« c'est moi ») ; l'administrateur peut l'effacer pour qu'il la choisisse à nouveau. */
+function memberPersonLabel(m) {
+  const p = byId(m.personId);
+  if (!p) return m.role === 'family' ? '<br><span class="muted small">⚠️ fiche pas encore choisie</span>' : '';
+  return `<br><span class="muted small">Fiche : ${esc(fullName(p))}</span>
+    <button class="link-btn small" data-member-reset="${esc(m.email)}" title="Le membre choisira à nouveau sa fiche">changer</button>`;
+}
+
 function renderMembers(list) {
   memberEmails = new Set(list.map((m) => m.email));
   renderRequests();
@@ -1447,7 +1503,7 @@ function renderMembers(list) {
     .map(
       (m) => `
       <li class="member">
-        <span class="member-email">${esc(m.email)}</span>
+        <span class="member-email">${esc(m.email)}${memberPersonLabel(m)}</span>
         <select data-member-role="${esc(m.email)}"${m.email === mine ? ' disabled' : ''}>
           ${Object.entries(ROLE_LABELS).map(([k, v]) => `<option value="${k}"${k === m.role ? ' selected' : ''}>${v}</option>`).join('')}
         </select>
@@ -1508,6 +1564,10 @@ $('#membersList').addEventListener('change', (e) => {
   if (email) cloud.setMember(email, e.target.value).then(() => toast('Droits modifiés'), (err) => toast(err.message));
 });
 $('#membersList').addEventListener('click', (e) => {
+  const reset = e.target.closest('[data-member-reset]')?.dataset.memberReset;
+  if (reset && confirm(`Effacer la fiche choisie par ${reset} ? Il la choisira à nouveau à sa prochaine ouverture.`)) {
+    cloud.resetMemberPerson(reset).then(() => toast('Fiche effacée'), (err) => toast(err.message));
+  }
   const email = e.target.closest('[data-member-remove]')?.dataset.memberRemove;
   if (email && confirm(`Retirer l’accès de ${email} ?`)) {
     cloud.removeMember(email).then(() => toast('Accès retiré'), (err) => toast(err.message));
