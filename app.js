@@ -962,9 +962,12 @@ async function exportJson() {
   download(`arbre-familial-${stamp()}.json`, json, 'application/json');
 }
 
+const GED_MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+const GED_REFN_TYPE = 'ARBRE_FAMILIAL'; // marque nos identifiants de fiche dans le fichier GEDCOM
+
 /** Export GEDCOM 5.5.1, le format d'échange standard entre logiciels de généalogie. */
 function toGedcom() {
-  const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+  const MONTHS = GED_MONTHS;
   const gedDate = (iso) => {
     const [y, m, d] = iso.split('-');
     return [d && String(+d), m && MONTHS[m - 1], y].filter(Boolean).join(' ');
@@ -997,6 +1000,8 @@ function toGedcom() {
     const given = clean([p.firstName, p.middleNames].filter(Boolean).join(' '));
     out.push(`0 ${indi.get(p.id)} INDI`, `1 NAME ${given} /${clean(p.lastName)}/`);
     out.push(`2 GIVN ${given}`, `2 SURN ${clean(p.lastName)}`);
+    // Identifiant de la fiche : permet de la retrouver quand on réimporte le fichier.
+    out.push(`1 REFN ${p.id}`, `2 TYPE ${GED_REFN_TYPE}`);
     if (p.sex !== 'U') out.push(`1 SEX ${p.sex}`);
     if (p.birthCountry) out.push(`1 NATI ${clean(countryName(p.birthCountry))}`);
     if (p.occupation) out.push(`1 OCCU ${clean(p.occupation)}`);
@@ -1066,6 +1071,243 @@ function importJson(file) {
   reader.readAsText(file);
 }
 
+/** Choisit l'import selon le contenu : GEDCOM (commence par « 0 HEAD ») ou JSON. */
+function importFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const text = String(reader.result).replace(/^﻿/, '');
+    if (/^\s*0\s+HEAD/.test(text)) importGedcom(text);
+    else importJson(file);
+  };
+  reader.readAsText(file);
+}
+
+/* --------------------------- Import GEDCOM ------------------------------ */
+
+/** Lit un fichier GEDCOM en arbre de lignes : { tag, xref, value, children }. */
+function parseGedcomTree(text) {
+  const root = { children: [] };
+  const stack = [root];
+  for (const raw of text.split(/\r\n|\r|\n/)) {
+    const m = raw.match(/^\s*(\d+)\s+(?:(@[^@]+@)\s+)?(\S+)(?: (.*))?$/);
+    if (!m) continue;
+    const level = +m[1];
+    const node = { tag: m[3].toUpperCase(), xref: m[2] || '', value: m[4] ?? '', children: [] };
+    stack.length = Math.min(stack.length, level + 1);
+    (stack[level] || stack[stack.length - 1]).children.push(node);
+    stack[level + 1] = node;
+  }
+  return root.children;
+}
+
+const gedChild = (node, tag) => node?.children.find((c) => c.tag === tag);
+const gedChildren = (node, tag) => node?.children.filter((c) => c.tag === tag) || [];
+
+/** Texte d'une ligne avec ses suites CONT (nouvelle ligne) et CONC (même ligne). */
+function gedText(node) {
+  let s = node.value;
+  for (const c of node.children) {
+    if (c.tag === 'CONT') s += '\n' + c.value;
+    else if (c.tag === 'CONC') s += c.value;
+  }
+  return s;
+}
+
+/**
+ * Date GEDCOM → format de l'application ('AAAA', 'AAAA-MM' ou 'AAAA-MM-JJ').
+ * « ABT 1834 », « BEF 1900 », « BET 1830 AND 1835 » donnent l'année seule.
+ */
+function gedDateToIso(s) {
+  const t = String(s || '').toUpperCase().replace(/@#D[^@]*@/g, ' ').replace(/\(.*?\)/g, ' ').trim();
+  const m = t.match(/(?:(\d{1,2})\s+)?(?:([A-Z]{3})\s+)?(\d{3,4})(?!\d)/);
+  if (!m) return '';
+  const y = m[3].padStart(4, '0');
+  const mo = m[2] ? GED_MONTHS.indexOf(m[2]) + 1 : 0;
+  if (!mo) return y;
+  const mm = String(mo).padStart(2, '0');
+  return m[1] && +m[1] >= 1 && +m[1] <= 31 ? `${y}-${mm}-${m[1].padStart(2, '0')}` : `${y}-${mm}`;
+}
+
+/** Nationalité écrite en toutes lettres (« Belgique », « Belgium ») ou en code (« BE ») → code. */
+let countryByName = null;
+function countryCode(name) {
+  if (!countryByName) {
+    countryByName = new Map();
+    let en = null;
+    try { en = new Intl.DisplayNames(['en'], { type: 'region' }); } catch { /* navigateur ancien */ }
+    for (const c of COUNTRY_CODES) {
+      countryByName.set(fold(c), c);
+      if (regionNames) countryByName.set(fold(regionNames.of(c)), c);
+      if (en) countryByName.set(fold(en.of(c)), c);
+    }
+  }
+  return countryByName.get(fold(String(name || '').trim())) || '';
+}
+
+const NOTES_MAX = 5000; // limite des règles Firestore
+
+/** Personnes et familles d'un fichier GEDCOM, dans un format proche de l'application. */
+function readGedcom(text) {
+  const top = parseGedcomTree(text);
+  const head = top.find((n) => n.tag === 'HEAD');
+  const fromThisApp = gedChild(head, 'SOUR')?.value.trim() === GED_REFN_TYPE;
+  const noteRecords = new Map(top.filter((n) => n.tag === 'NOTE' && n.xref).map((n) => [n.xref, gedText(n)]));
+  const indis = top.filter((n) => n.tag === 'INDI' && n.xref).map((n) => {
+    const nameNode = gedChildren(n, 'NAME').find((x) => !gedChild(x, 'TYPE')) || gedChild(n, 'NAME');
+    const nameValue = nameNode?.value || '';
+    const slash = nameValue.match(/^(.*?)\/(.*?)\/(.*)$/);
+    const given = (gedChild(nameNode, 'GIVN')?.value ?? (slash ? slash[1] : nameValue)).trim().replace(/\s+/g, ' ');
+    const surname = (gedChild(nameNode, 'SURN')?.value ?? (slash ? slash[2] : '')).trim().replace(/\s+/g, ' ');
+    const birt = gedChild(n, 'BIRT');
+    const deat = gedChild(n, 'DEAT');
+    const refn = gedChildren(n, 'REFN').find((r) => gedChild(r, 'TYPE')?.value.trim() === GED_REFN_TYPE)?.value.trim() || '';
+    const notes = gedChildren(n, 'NOTE')
+      .map((x) => (noteRecords.has(x.value.trim()) ? noteRecords.get(x.value.trim()) : gedText(x)))
+      .filter((s) => s.trim()).join('\n');
+    const sex = (gedChild(n, 'SEX')?.value || '').trim().toUpperCase();
+    return {
+      xref: n.xref,
+      refn,
+      given,
+      surname,
+      sex: ['M', 'F'].includes(sex) ? sex : '',
+      birthDate: gedDateToIso(gedChild(birt, 'DATE')?.value),
+      birthPlace: (gedChild(birt, 'PLAC')?.value || '').trim(),
+      deathDate: gedDateToIso(gedChild(deat, 'DATE')?.value),
+      deathPlace: (gedChild(deat, 'PLAC')?.value || '').trim(),
+      deceased: Boolean(deat),
+      occupation: gedChildren(n, 'OCCU').map((x) => x.value.trim()).filter(Boolean).join(', '),
+      birthCountry: countryCode(gedChild(n, 'NATI')?.value),
+      notes,
+    };
+  });
+  const fams = top.filter((n) => n.tag === 'FAM').map((n) => ({
+    husb: gedChild(n, 'HUSB')?.value.trim() || '',
+    wife: gedChild(n, 'WIFE')?.value.trim() || '',
+    children: gedChildren(n, 'CHIL').map((c) => c.value.trim()),
+    divorced: Boolean(gedChild(n, 'DIV')),
+  }));
+  return { fromThisApp, indis, fams };
+}
+
+/**
+ * Retrouve, pour chaque personne du fichier, la fiche existante qui lui correspond :
+ * 1. par l'identifiant de fiche (REFN, écrit par nos exports) ;
+ * 2. pour un fichier exporté par l'application sans REFN : par le numéro @In@, qui suit l'ordre
+ *    des fiches à l'export, à condition que le prénom, ou le nom et la date de naissance, concordent ;
+ * 3. sinon par prénom + nom + date de naissance, si une seule fiche correspond.
+ * Les personnes sans correspondance seront créées.
+ */
+function matchGedcomPeople(data) {
+  const claimed = new Set();
+  const match = new Map(); // xref → id existant
+  const firstWord = (s) => fold(String(s || '').split(' ')[0]);
+  const same = (g, p) =>
+    firstWord(g.given) === firstWord(p.firstName) ||
+    (fold(g.surname) === fold(p.lastName) && g.birthDate && g.birthDate === p.birthDate);
+  const take = (g, p) => { match.set(g.xref, p.id); claimed.add(p.id); };
+  for (const g of data.indis) {
+    const p = g.refn && byId(g.refn);
+    if (p && !claimed.has(p.id)) take(g, p);
+  }
+  if (data.fromThisApp) {
+    for (const g of data.indis) {
+      if (match.has(g.xref)) continue;
+      const n = g.xref.match(/^@I(\d+)@$/);
+      const p = n && people[+n[1] - 1];
+      if (p && !claimed.has(p.id) && same(g, p)) take(g, p);
+    }
+  }
+  for (const g of data.indis) {
+    if (match.has(g.xref)) continue;
+    const found = people.filter((p) => !claimed.has(p.id)
+      && fold(`${p.firstName} ${p.middleNames}`.trim()) === fold(g.given)
+      && fold(p.lastName) === fold(g.surname)
+      && (p.birthDate || '') === g.birthDate);
+    if (found.length === 1) take(g, found[0]);
+  }
+  return match;
+}
+
+/**
+ * Import d'un fichier GEDCOM. Les personnes reconnues sont mises à jour avec les informations
+ * du fichier (une information absente du fichier ne vide pas la fiche) ; les autres sont ajoutées.
+ * Les liens (parents, conjoints, séparations) du fichier sont ajoutés ; aucun lien n'est retiré.
+ */
+function importGedcom(text) {
+  if (!canEditAll()) return;
+  let data;
+  try { data = readGedcom(text); } catch { data = null; }
+  if (!data?.indis.length) return toast('Fichier GEDCOM non reconnu ou vide.');
+  const match = matchGedcomPeople(data);
+  const nbNew = data.indis.length - match.size;
+  if (!confirm(`Fichier GEDCOM : ${data.indis.length} personne(s).\n`
+    + `• ${match.size} correspondent à des fiches existantes, qui seront mises à jour ;\n`
+    + `• ${nbNew} nouvelle(s) fiche(s) seront créées.\n\n`
+    + 'Une information absente du fichier ne sera pas effacée. Continuer ?')) return;
+
+  let truncated = 0;
+  const before = new Map(people.map((p) => [p.id, JSON.stringify(p)]));
+  const idOf = new Map(); // xref → id
+  mutate(`Import GEDCOM de ${data.indis.length} personne(s)`, () => {
+    for (const g of data.indis) {
+      let p = match.has(g.xref) && byId(match.get(g.xref));
+      if (!p) {
+        p = normalize({});
+        people.push(p);
+      }
+      idOf.set(g.xref, p.id);
+      // Prénoms : on garde la répartition prénom / autres prénoms de la fiche si elle donne le même texte.
+      if (g.given && fold(`${p.firstName} ${p.middleNames}`.trim()) !== fold(g.given)) {
+        const [first, ...rest] = g.given.split(' ');
+        p.firstName = first;
+        p.middleNames = rest.join(' ');
+      }
+      if (g.surname) p.lastName = g.surname;
+      if (!p.firstName) p.firstName = '?'; // nom et prénom sont obligatoires
+      if (!p.lastName) p.lastName = '?';
+      if (g.sex) p.sex = g.sex;
+      for (const k of ['birthDate', 'birthPlace', 'deathDate', 'deathPlace', 'occupation', 'birthCountry']) {
+        if (g[k]) p[k] = g[k];
+      }
+      if (g.deceased) p.deceased = true;
+      if (g.notes) {
+        p.notes = g.notes.length > NOTES_MAX ? g.notes.slice(0, NOTES_MAX - 1) + '…' : g.notes;
+        if (g.notes.length > NOTES_MAX) truncated++;
+      }
+    }
+    for (const f of data.fams) {
+      const h = byId(idOf.get(f.husb));
+      const w = byId(idOf.get(f.wife));
+      if (h && w && h !== w) {
+        if (!h.spouseIds.includes(w.id)) h.spouseIds.push(w.id);
+        if (!w.spouseIds.includes(h.id)) w.spouseIds.push(h.id);
+        if (f.divorced) {
+          if (!h.separatedIds.includes(w.id)) h.separatedIds.push(w.id);
+          if (!w.separatedIds.includes(h.id)) w.separatedIds.push(h.id);
+        }
+      }
+      for (const cx of f.children) {
+        const c = byId(idOf.get(cx));
+        if (!c) continue;
+        if (h && h !== c) c.fatherId = h.id;
+        if (w && w !== c) c.motherId = w.id;
+      }
+    }
+    repairLinks();
+  });
+  let added = 0;
+  let updated = 0;
+  for (const p of people) {
+    if (!before.has(p.id)) added++;
+    else if (before.get(p.id) !== JSON.stringify(p)) updated++;
+  }
+  $('#menuDialog').close();
+  toast(`Import GEDCOM : ${added} ajoutée(s), ${updated} modifiée(s)`
+    + (truncated ? ` ; ${truncated} note(s) raccourcie(s) à ${NOTES_MAX} caractères` : ''));
+  route();
+}
+
 function loadDemo() {
   if (people.length && !confirm('Ajouter la famille d’exemple aux données existantes ?')) return;
   const d = (id, firstName, lastName, sex, birthDate, extra = {}) =>
@@ -1124,7 +1366,7 @@ $('#exportGedBtn').addEventListener('click', () =>
   people.length ? download(`arbre-familial-${stamp()}.ged`, toGedcom(), 'text/plain') : toast('Rien à exporter.')
 );
 $('#importInput').addEventListener('change', (e) => {
-  if (e.target.files[0]) importJson(e.target.files[0]);
+  if (e.target.files[0]) importFile(e.target.files[0]);
   e.target.value = '';
 });
 $('#demoBtn').addEventListener('click', loadDemo);

@@ -49,7 +49,13 @@ Le mode est choisi dans `config.js` : `firebase: null` = local ; une configurati
 - **Photos** : sur la fiche d'une personne ou dans le formulaire, « 🖼️ Choisir une image » (galerie, fichiers) et,
   sur téléphone et tablette, « 📷 Prendre une photo » (ouvre directement l'appareil photo).
   La photo est recadrée en carré et réduite (≈ 20–40 Ko) pour rester légère.
-- Export **JSON** et **GEDCOM 5.5.1** (format standard des logiciels de généalogie), import JSON avec fusion.
+- Export **JSON** et **GEDCOM 5.5.1** (format standard des logiciels de généalogie), import JSON et GEDCOM avec fusion.
+  - Import GEDCOM : chaque personne du fichier est rapprochée d'une fiche existante (par l'identifiant `REFN`
+    écrit par nos exports ; pour un ancien export sans `REFN`, par le numéro `@In@` vérifié par le prénom ;
+    sinon par prénom, nom et date de naissance identiques). Les fiches reconnues sont mises à jour, les autres
+    créées ; un résumé est demandé avant d'appliquer. Une information absente du fichier n'efface rien, et
+    aucun lien n'est retiré. Les dates approximatives (`ABT 1834`…) sont ramenées à l'année ; les photos
+    ne passent pas par le GEDCOM.
 - Fonctionne hors connexion et s'installe sur l'écran d'accueil (« Ajouter à l'écran d'accueil »).
 
 Mode partagé en plus :
