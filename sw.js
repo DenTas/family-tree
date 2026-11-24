@@ -1,5 +1,5 @@
 // Service worker : met l'application en cache pour qu'elle fonctionne hors ligne.
-const CACHE = 'arbre-familial-v8';
+const CACHE = 'arbre-familial-v9';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'tree.js', 'cloud.js', 'config.js', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', (e) => {
