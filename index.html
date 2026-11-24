@@ -14,7 +14,12 @@
 <body>
   <header class="topbar">
     <h1 id="title">Arbre familial</h1>
-    <button id="menuBtn" class="icon-btn" aria-label="Menu">⋮<span id="menuDot" class="dot" hidden></span></button>
+    <div class="top-actions">
+      <button id="onlineBtn" class="online-btn shared-only" hidden aria-haspopup="dialog">
+        <span class="online-dot" aria-hidden="true"></span><span id="onlineCount"></span>
+      </button>
+      <button id="menuBtn" class="icon-btn" aria-label="Menu">⋮<span id="menuDot" class="dot" hidden></span></button>
+    </div>
   </header>
 
   <nav class="tabs" role="tablist">
@@ -154,6 +159,14 @@
       <button class="btn shared-only" id="signOutBtn">Se déconnecter</button>
       <button class="btn" id="closeMenuBtn">Fermer</button>
     </div>
+  </dialog>
+
+  <!-- Personnes connectées (mode partagé) -->
+  <dialog id="onlineDialog">
+    <h2>Connectés en ce moment</h2>
+    <ul id="onlineList" class="online-list"></ul>
+    <p class="muted small">Personnes qui ont l’application ouverte (mise à jour chaque minute).</p>
+    <div class="form-actions"><button class="btn" id="closeOnlineBtn">Fermer</button></div>
   </dialog>
 
   <!-- « Qui êtes-vous ? » (mode partagé, première connexion) -->
